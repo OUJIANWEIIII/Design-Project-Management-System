@@ -356,12 +356,10 @@ function ProjectDetail({ data, project, editProject, refresh }: { data: Bootstra
   const firstRound = project.rounds[0];
   const currentRound = project.rounds.find((round) => round.roundIndex === project.currentRoundIndex) || project.rounds[project.rounds.length - 1];
   const editingRound = editingRoundIndex ? project.rounds.find((round) => round.roundIndex === editingRoundIndex) : undefined;
-  const totalWorkdays = project.rounds.reduce((sum, round) => sum + project.scheduleItems.filter((item) => item.roundIndex === round.roundIndex).length, 0);
-  const waitingDays = project.feedbackEvents.reduce((sum, event) => {
-    const start = new Date(event.submittedAt).getTime();
-    const end = event.feedbackReceivedAt ? new Date(event.feedbackReceivedAt).getTime() : Date.now();
-    return sum + Math.max(0, Math.ceil((end - start) / 86400000));
-  }, 0);
+  const currentFeedback = [...project.feedbackEvents].reverse().find((event) => event.roundIndex === (project.currentRoundIndex || 1) && !event.feedbackReceivedAt);
+  const delayedDays = calculateProjectDelayedDays(project);
+  const feedbackStart = project.status === "WAITING_FEEDBACK" ? project.scheduleStoppedAt || currentRound?.submittedAt || currentFeedback?.submittedAt : currentFeedback?.submittedAt;
+  const waitingDays = feedbackStart ? Math.max(0, calendarDiffDays(feedbackStart, new Date())) : 0;
   const submitFeedback = async () => {
     await fetch(`/api/projects/${project.id}/feedback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notes: "已提交，等待需求方反馈。" }) });
     await refresh();
@@ -375,7 +373,7 @@ function ProjectDetail({ data, project, editProject, refresh }: { data: Bootstra
       await refresh();
     }
   };
-  return <><section className="page-head"><div><span className="eyebrow">PROJECT ( DETAIL )</span><h1>[{project.level}] {project.name}</h1></div><div className="head-actions"><button className="ghost" onClick={submitFeedback}>提交并待反馈</button><button className="primary" onClick={() => { setShowRoundForm(!showRoundForm); setEditingRoundIndex(null); }}>开启下一轮</button><button className="ghost" onClick={() => editProject(project.id)}>编辑项目</button><button className="danger-action" onClick={() => deleteProject(project.id, refresh)}>删除项目</button></div></section>{project.isUnscheduled && <section className="notice">该项目尚未完成安排，请补充设计师和开始时间。</section>}{showRoundForm && <RoundForm data={data} project={project} refresh={refresh} onDone={() => setShowRoundForm(false)} />}{editingRound && <RoundForm data={data} project={project} round={editingRound} refresh={refresh} onDone={() => setEditingRoundIndex(null)} />}<section className="round-summary"><div><span>当前轮次</span><strong>R{project.currentRoundIndex || 1}</strong></div><div><span>首次开始</span><strong>{formatDate(firstRound?.startDate || project.startDate)}</strong></div><div><span>当前交付</span><strong>{formatDate(currentRound?.deliveryDate || project.deliveryDate)}</strong></div><div><span>设计占用</span><strong>{totalWorkdays} 天</strong></div><div><span>反馈等待</span><strong>{waitingDays} 天</strong></div></section><section className="detail-layout"><div className="panel"><div className="panel-title"><span>ROUND TIMELINE</span><b>{project.rounds.length}</b></div><div className="round-list">{project.rounds.map((round) => <article className={`round-card ${round.roundIndex === project.currentRoundIndex ? "active" : ""}`} key={round.id}><div className="round-card-head"><strong>R{round.roundIndex} · [{round.level}]</strong><div className="round-head-actions">{badge(round.status)}<button className="ghost tiny" onClick={() => { setEditingRoundIndex(round.roundIndex); setShowRoundForm(false); }}>编辑本轮</button><button className="danger-action tiny" disabled={project.rounds.length <= 1} onClick={() => deleteRound(round.roundIndex)}>删除本轮</button></div></div><div className="round-meta"><span>开始 {formatDate(round.startDate)}</span><span>对齐 {formatDate(round.alignmentDate)}</span><span>交付 {formatDate(round.deliveryDate)}</span><span>设计师 {namesOf(data.designers, round.designerIds)}</span></div><div className="timeline compact-timeline">{project.scheduleItems.filter((item) => item.roundIndex === round.roundIndex).map((item) => <div className={`timeline-node ${item.isAlignmentNode ? "align" : ""} ${item.isDeliveryNode ? "delivery" : ""}`} key={item.id}><div className="node-index">R{round.roundIndex} D{String(item.workdayIndex).padStart(2, "0")}</div><div><strong>{timelineStageLabel(item)}</strong><span>{formatDate(item.date)} {weekdays[new Date(item.date).getDay()]}</span></div><div className="node-tags">{item.isAlignmentNode && <em>ALIGN</em>}{item.isDeliveryNode && <em>DELIVERY</em>}</div></div>)}</div></article>)}</div></div><aside className="panel meta-panel"><div className="panel-title"><span>BASIC INFO</span><b>{badge(project.status)}</b></div>{meta("事业部", divisionLabels[project.division])}{meta("需求方", requestTypeLabels[project.requestType])}{meta("设计负责人", nameOf(data.designers, project.designOwnerId))}{meta("当前设计师", namesOf(data.designers, project.designerIds))}{meta("项目首次开始", formatDate(firstRound?.startDate || project.startDate))}{meta("当前中途对齐", formatDate(currentRound?.alignmentDate || project.alignmentDate))}{meta("当前交付", formatDate(currentRound?.deliveryDate || project.deliveryDate))}{meta("项目提醒", project.allowReminder ? "提醒" : "不提醒")}<div className="feedback-list"><strong>反馈记录</strong>{project.feedbackEvents.length ? project.feedbackEvents.map((event) => <span key={event.id}>R{event.roundIndex} 提交：{formatDate(event.submittedAt)} · 反馈：{formatDate(event.feedbackReceivedAt)}</span>) : <span>暂无反馈等待记录</span>}</div><div className="notes">{project.notes || "暂无备注。"}</div></aside></section></>;
+  return <><section className="page-head"><div><span className="eyebrow">PROJECT ( DETAIL )</span><h1>[{project.level}] {project.name}</h1></div><div className="head-actions"><button className="ghost" onClick={submitFeedback}>提交并待反馈</button><button className="primary" onClick={() => { setShowRoundForm(!showRoundForm); setEditingRoundIndex(null); }}>开启下一轮</button><button className="ghost" onClick={() => editProject(project.id)}>编辑项目</button><button className="danger-action" onClick={() => deleteProject(project.id, refresh)}>删除项目</button></div></section>{project.isUnscheduled && <section className="notice">该项目尚未完成安排，请补充设计师和开始时间。</section>}{showRoundForm && <RoundForm data={data} project={project} refresh={refresh} onDone={() => setShowRoundForm(false)} />}{editingRound && <RoundForm data={data} project={project} round={editingRound} refresh={refresh} onDone={() => setEditingRoundIndex(null)} />}<section className="round-summary"><div><span>当前轮次</span><strong>R{project.currentRoundIndex || 1}</strong></div><div><span>首次开始</span><strong>{formatDate(firstRound?.startDate || project.startDate)}</strong></div><div><span>当前交付</span><strong>{formatDate(currentRound?.deliveryDate || project.deliveryDate)}</strong></div><div><span>总体延期</span><strong>{delayedDays} 天</strong></div><div><span>反馈等待</span><strong>{waitingDays} 天</strong></div></section><section className="detail-layout"><div className="panel"><div className="panel-title"><span>ROUND TIMELINE</span><b>{project.rounds.length}</b></div><div className="round-list">{project.rounds.map((round) => <article className={`round-card ${round.roundIndex === project.currentRoundIndex ? "active" : ""}`} key={round.id}><div className="round-card-head"><strong>R{round.roundIndex} · [{round.level}]</strong><div className="round-head-actions">{badge(round.status)}<button className="ghost tiny" onClick={() => { setEditingRoundIndex(round.roundIndex); setShowRoundForm(false); }}>编辑本轮</button><button className="danger-action tiny" disabled={project.rounds.length <= 1} onClick={() => deleteRound(round.roundIndex)}>删除本轮</button></div></div><div className="round-meta"><span>开始 {formatDate(round.startDate)}</span><span>对齐 {formatDate(round.alignmentDate)}</span><span>交付 {formatDate(round.deliveryDate)}</span><span>设计师 {namesOf(data.designers, round.designerIds)}</span></div><div className="timeline compact-timeline">{project.scheduleItems.filter((item) => item.roundIndex === round.roundIndex).map((item) => <div className={`timeline-node ${item.isAlignmentNode ? "align" : ""} ${item.isDeliveryNode ? "delivery" : ""}`} key={item.id}><div className="node-index">R{round.roundIndex} D{String(item.workdayIndex).padStart(2, "0")}</div><div><strong>{timelineStageLabel(item)}</strong><span>{formatDate(item.date)} {weekdays[new Date(item.date).getDay()]}</span></div><div className="node-tags">{item.isAlignmentNode && <em>ALIGN</em>}{item.isDeliveryNode && <em>DELIVERY</em>}</div></div>)}</div></article>)}</div></div><aside className="panel meta-panel"><div className="panel-title"><span>BASIC INFO</span><b>{badge(project.status)}</b></div>{meta("事业部", divisionLabels[project.division])}{meta("需求方", requestTypeLabels[project.requestType])}{meta("设计负责人", nameOf(data.designers, project.designOwnerId))}{meta("当前设计师", namesOf(data.designers, project.designerIds))}{meta("项目首次开始", formatDate(firstRound?.startDate || project.startDate))}{meta("当前中途对齐", formatDate(currentRound?.alignmentDate || project.alignmentDate))}{meta("当前交付", formatDate(currentRound?.deliveryDate || project.deliveryDate))}{meta("项目提醒", project.allowReminder ? "提醒" : "不提醒")}<div className="feedback-list"><strong>反馈记录</strong>{project.feedbackEvents.length ? project.feedbackEvents.map((event) => <span key={event.id}>R{event.roundIndex} 提交：{formatDate(event.submittedAt)} · 反馈：{formatDate(event.feedbackReceivedAt)}</span>) : <span>暂无反馈等待记录</span>}</div><div className="notes">{project.notes || "暂无备注。"}</div></aside></section></>;
 }
 
 function RoundForm({ data, project, round, refresh, onDone }: { data: Bootstrap; project: Project; round?: ProjectRound; refresh: () => Promise<void>; onDone: () => void }) {
@@ -439,6 +437,40 @@ function statusToneClass(label: string) {
 
 function meta(label: string, value: string | ReactNode) {
   return <div className="meta"><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function calendarDiffDays(start: string | Date, end: string | Date) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const startMidnight = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
+  const endMidnight = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime();
+  return Math.floor((endMidnight - startMidnight) / 86400000);
+}
+
+function calculateProjectDelayedDays(project: Project) {
+  const rounds = [...project.rounds].sort((a, b) => a.roundIndex - b.roundIndex);
+  const today = new Date();
+  return rounds.reduce((sum, round, index) => {
+    if (!round.deliveryDate) return sum;
+    const nextRound = rounds[index + 1];
+    const roundFeedbackEvents = project.feedbackEvents
+      .filter((event) => event.roundIndex === round.roundIndex)
+      .sort((a, b) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+    const latestFeedback = roundFeedbackEvents[roundFeedbackEvents.length - 1];
+    const latestClosedFeedback = [...roundFeedbackEvents].reverse().find((event) => event.feedbackReceivedAt);
+    const isCurrentRound = round.roundIndex === project.currentRoundIndex;
+    const roundEnd =
+      round.submittedAt ||
+      latestFeedback?.submittedAt ||
+      round.feedbackReceivedAt ||
+      latestClosedFeedback?.feedbackReceivedAt ||
+      nextRound?.startDate ||
+      (isCurrentRound && project.status === "COMPLETED" ? project.completedAt || project.scheduleStoppedAt : null) ||
+      (isCurrentRound && ["WAITING_FEEDBACK", "PAUSED"].includes(project.status) ? project.scheduleStoppedAt : null) ||
+      (isCurrentRound ? today : null);
+    if (!roundEnd) return sum;
+    return sum + Math.max(0, calendarDiffDays(round.deliveryDate, roundEnd));
+  }, 0);
 }
 
 function nameOf(designers: Designer[], id: string | null) {

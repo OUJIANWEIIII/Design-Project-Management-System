@@ -132,7 +132,15 @@ export async function submitProjectForFeedback(id: string, notes = "") {
   if (!project) return null;
   const roundIndex = project.currentRoundIndex || 1;
   const now = new Date();
-  await prisma.feedbackEvent.create({ data: { projectId: id, roundIndex, submittedAt: now, notes } });
+  const openFeedback = await prisma.feedbackEvent.findFirst({
+    where: { projectId: id, roundIndex, feedbackReceivedAt: null },
+    orderBy: { submittedAt: "desc" }
+  });
+  if (openFeedback) {
+    await prisma.feedbackEvent.update({ where: { id: openFeedback.id }, data: { submittedAt: now, notes } });
+  } else {
+    await prisma.feedbackEvent.create({ data: { projectId: id, roundIndex, submittedAt: now, notes } });
+  }
   await prisma.projectRound.updateMany({ where: { projectId: id, roundIndex }, data: { status: ProjectStatus.WAITING_FEEDBACK, submittedAt: now } });
   await prisma.$executeRawUnsafe(
     `UPDATE "Project" SET "status" = ?, "scheduleStoppedAt" = ?, "updatedAt" = ? WHERE "id" = ?`,
