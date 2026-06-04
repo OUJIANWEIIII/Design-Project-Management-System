@@ -37,6 +37,7 @@ export type ProjectRoundInput = {
   designerIds: string[];
   startDate?: string | null;
   targetDeliveryDate?: string | null;
+  allowReminder?: boolean;
   notes?: string;
 };
 
@@ -77,6 +78,7 @@ export async function createProject(input: ProjectInput) {
     designerIds: input.designerIds,
     startDate: input.startDate,
     targetDeliveryDate: input.targetDeliveryDate,
+    allowReminder: input.allowReminder,
     notes: input.notes
   });
   await rebuildSchedule(project.id, { ...project, level: project.level as ProjectLevel, status: project.status as ProjectStatus, designerIds: input.designerIds }, round.id, 1);
@@ -88,7 +90,12 @@ export async function createProject(input: ProjectInput) {
 export async function updateProject(id: string, input: ProjectInput) {
   const current = await prisma.project.findUnique({ where: { id } });
   const data = projectData(input);
+  const wasUnscheduled = !current?.startDate || decodeIds(current.designerIds).length === 0;
+  const wasReminderEnabled = current?.allowReminder === true;
   const project = await prisma.project.update({ where: { id }, data });
+  const shouldSendArrangementReminder =
+    project.allowReminder &&
+    ((!wasReminderEnabled && !project.isUnscheduled) || (wasUnscheduled && !project.isUnscheduled));
   await syncScheduleStopFields(project.id, current?.status as ProjectStatus | undefined, project.status as ProjectStatus);
   const roundIndex = project.currentRoundIndex || 1;
   const round = await upsertRound(project.id, roundIndex, {
@@ -97,11 +104,15 @@ export async function updateProject(id: string, input: ProjectInput) {
     designerIds: input.designerIds,
     startDate: input.startDate,
     targetDeliveryDate: input.targetDeliveryDate,
+    allowReminder: input.allowReminder,
     notes: input.notes
   });
   await rebuildSchedule(project.id, { ...project, level: project.level as ProjectLevel, status: project.status as ProjectStatus, designerIds: input.designerIds }, round.id, roundIndex);
   if (!project.allowReminder) await prisma.reminder.deleteMany({ where: { projectId: id } });
   else await rebuildReminderPlan();
+  if (shouldSendArrangementReminder) {
+    await createAndSendProjectCreatedReminder(project.id, (project.currentRoundIndex || 1) > 1 ? "新一轮设计开始" : "项目已安排");
+  }
   return getProject(project.id);
 }
 
@@ -176,6 +187,7 @@ export async function createNextRound(projectId: string, input: ProjectRoundInpu
       autoDeliveryDate: enriched.autoDeliveryDate,
       alignmentDate: enriched.alignmentDate,
       deliveryDate: enriched.deliveryDate,
+      allowReminder: input.allowReminder ?? project.allowReminder,
       notes: input.notes || ""
     }
   });
@@ -197,7 +209,7 @@ export async function createNextRound(projectId: string, input: ProjectRoundInpu
   await clearScheduleStopFields(projectId);
   await rebuildSchedule(projectId, { ...enriched, level: input.level, designerIds: input.designerIds.slice(0, 4) }, round.id, nextIndex);
   await rebuildReminderPlan();
-  await createAndSendProjectCreatedReminder(projectId);
+  await createAndSendProjectCreatedReminder(projectId, "新一轮设计开始");
   return getProject(projectId);
 }
 
@@ -225,6 +237,7 @@ export async function updateProjectRound(projectId: string, roundIndex: number, 
       autoDeliveryDate: enriched.autoDeliveryDate,
       alignmentDate: enriched.alignmentDate,
       deliveryDate: enriched.deliveryDate,
+      allowReminder: input.allowReminder ?? existingRound.allowReminder,
       notes: input.notes || ""
     }
   });
@@ -246,6 +259,9 @@ export async function updateProjectRound(projectId: string, roundIndex: number, 
   }
   await rebuildSchedule(projectId, { ...enriched, level: input.level, designerIds }, round.id, roundIndex);
   await rebuildReminderPlan();
+  if ((project.currentRoundIndex || 1) === roundIndex && existingRound.allowReminder === false && round.allowReminder && !enriched.isUnscheduled) {
+    await createAndSendProjectCreatedReminder(projectId, roundIndex > 1 ? "新一轮设计开始" : "项目已安排");
+  }
   return getProject(projectId);
 }
 
@@ -332,6 +348,7 @@ async function upsertRound(projectId: string, roundIndex: number, input: Project
       autoDeliveryDate: enriched.autoDeliveryDate,
       alignmentDate: enriched.alignmentDate,
       deliveryDate: enriched.deliveryDate,
+      allowReminder: input.allowReminder !== false,
       notes: input.notes || ""
     },
     create: {
@@ -345,6 +362,7 @@ async function upsertRound(projectId: string, roundIndex: number, input: Project
       autoDeliveryDate: enriched.autoDeliveryDate,
       alignmentDate: enriched.alignmentDate,
       deliveryDate: enriched.deliveryDate,
+      allowReminder: input.allowReminder !== false,
       notes: input.notes || ""
     }
   });

@@ -1,4 +1,4 @@
-﻿# dependencies
+# dependencies
 node_modules/
 
 # Next.js
@@ -10,10 +10,12 @@ dist/
 build/
 coverage/
 
-# env
+# environment
 .env
 .env.local
-.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # database
 *.db
@@ -28,14 +30,16 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# OS
+# OS / editor
 .DS_Store
 Thumbs.db
-
-# local tools
-.tools/
-node-v*-win-x64.zip
-
-# editor
 .vscode/
 .idea/
+
+# Python / misc caches
+__pycache__/
+*.pyc
+
+# local bundled runtime / downloaded archives
+.tools/
+node-v*-win-x64.zip

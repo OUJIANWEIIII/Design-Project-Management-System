@@ -75,4 +75,34 @@ describe("weekly overview date facts", () => {
 
     expect(getWeeklyProjectItemsForDate(project, "2026-06-03")).toHaveLength(0);
   });
+
+  it("keeps previous round delayed history after a new round starts", () => {
+    const project: WeeklyProject = {
+      ...baseProject,
+      status: ProjectStatus.IN_PROGRESS,
+      currentRoundIndex: 2,
+      scheduleItems: [
+        ...baseProject.scheduleItems,
+        {
+          id: "p1-r2-d1",
+          roundIndex: 2,
+          date: "2026-06-04",
+          workdayIndex: 1,
+          phaseName: "需求理解与设计准备",
+          isAlignmentNode: false,
+          isDeliveryNode: false,
+          designerIds: ["d1"]
+        }
+      ]
+    };
+
+    const delayedHistory = getWeeklyProjectItemsForDate(project, "2026-06-03");
+    const nextRoundStart = getWeeklyProjectItemsForDate(project, "2026-06-04");
+
+    expect(delayedHistory).toHaveLength(1);
+    expect(delayedHistory[0].roundIndex).toBe(1);
+    expect(weeklyStageLabel(project, delayedHistory[0])).toBe("延期");
+    expect(nextRoundStart).toHaveLength(1);
+    expect(nextRoundStart[0].roundIndex).toBe(2);
+  });
 });

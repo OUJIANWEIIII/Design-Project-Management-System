@@ -7,7 +7,7 @@ import { Division, ProjectStatus, ReminderStatus, ReminderType, RequestType } fr
 export async function rebuildReminderPlan() {
   await cleanupOldReminderRecords();
   await prisma.reminder.deleteMany({ where: { type: { in: [ReminderType.ALIGNMENT_TODAY, ReminderType.DELIVERY_TODAY, ReminderType.UNSCHEDULED_PROJECTS] } } });
-  const projects = await prisma.project.findMany({ include: { scheduleItems: true } });
+  const projects = await prisma.project.findMany({ include: { scheduleItems: true, rounds: true } });
   const designers = await prisma.designer.findMany();
   const namesById = new Map(designers.map((item) => [item.id, item.name]));
   const locked = await prisma.reminder.findMany({ where: { status: { in: [ReminderStatus.SENT, ReminderStatus.REVOKED] } } });
@@ -22,7 +22,6 @@ export async function rebuildReminderPlan() {
     }
   ];
   for (const project of projects) {
-    if (!project.allowReminder) continue;
     planned.push(...buildProjectReminderRows(project, namesById));
   }
   for (const item of planned) {
@@ -37,19 +36,20 @@ export async function rebuildReminderPlan() {
   }
 }
 
-export async function createAndSendProjectCreatedReminder(projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project || !project.allowReminder) return null;
+export async function createAndSendProjectCreatedReminder(projectId: string, title = "项目已安排") {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, include: { rounds: true } });
+  if (!project || project.isUnscheduled || !isCurrentRoundReminderEnabled(project)) return null;
   const designers = await prisma.designer.findMany();
   const namesById = new Map(designers.map((item) => [item.id, item.name]));
+  const roundIndex = project.currentRoundIndex || 1;
   const reminder = await prisma.reminder.create({
     data: {
       projectId: project.id,
-      roundIndex: project.currentRoundIndex || 1,
+      roundIndex,
       type: ReminderType.PROJECT_CREATED,
       scheduledAt: new Date(),
       status: ReminderStatus.PENDING,
-      messageContent: buildProjectMessage(project, ReminderType.PROJECT_CREATED, namesById)
+      messageContent: buildProjectMessage(project, ReminderType.PROJECT_CREATED, namesById, title)
     }
   });
   return sendReminder(reminder.id);
@@ -64,10 +64,18 @@ export async function sendDueReminders() {
   const results = [];
   for (const reminder of due) {
     if (reminder.type === ReminderType.WEEKLY_SCHEDULE && !isWeeklyScheduleSendWindow(now)) continue;
-    results.push(await sendReminder(reminder.id));
+    try {
+      results.push(await sendReminder(reminder.id));
+    } catch (error) {
+      if (!isRecordMissingError(error)) throw error;
+    }
   }
   await cleanupOldReminderRecords(now);
   return results;
+}
+
+function isRecordMissingError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2025";
 }
 
 export async function cleanupOldReminderRecords(now = new Date(), retentionDays = 2) {
@@ -179,6 +187,7 @@ function isWechatWebhookUrl(url: string) {
 }
 
 function buildProjectReminderRows(project: Awaited<ReturnType<typeof prisma.project.findMany>>[number], namesById: Map<string, string>) {
+  if (!isCurrentRoundReminderEnabled(project)) return [];
   const roundIndex = project.currentRoundIndex || 1;
   const rows: Array<{ projectId: string; roundIndex: number; type: ReminderType; scheduledAt: Date; messageContent: string }> = [
   ];
@@ -212,34 +221,32 @@ function buildProjectReminderRows(project: Awaited<ReturnType<typeof prisma.proj
   return rows;
 }
 
-function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.findMany>>[number], type: ReminderType, namesById: Map<string, string>) {
-  const designerIds = decodeIds(project.designerIds);
+function isCurrentRoundReminderEnabled(project: { allowReminder: boolean; currentRoundIndex: number | null; rounds?: Array<{ roundIndex: number; allowReminder?: boolean }> }) {
+  const roundIndex = project.currentRoundIndex || 1;
+  const round = project.rounds?.find((item) => item.roundIndex === roundIndex);
+  return round?.allowReminder ?? project.allowReminder;
+}
+
+export function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.findMany>>[number], type: ReminderType, namesById: Map<string, string>, customTitle?: string) {
+  const currentRound = getCurrentMessageRound(project);
+  const designerIds = currentRound ? decodeIds(currentRound.designerIds) : decodeIds(project.designerIds);
   const designerNames = designerIds.map((id) => namesById.get(id)).filter(Boolean);
   const ownerName = project.designOwnerId ? namesById.get(project.designOwnerId) || "-" : "-";
   const designerLine = designerNames.length ? designerNames.join("、") : "-";
-  const projectLine = `[${project.level}] ${project.name}`;
-  const planLine = project.startDate || project.deliveryDate ? `计划：${formatDate(project.startDate)} - ${formatDate(project.deliveryDate)}` : "";
-  const missing: string[] = [];
-  if (!designerIds.length) missing.push("设计师");
-  if (!project.startDate) missing.push("开始时间");
-
-  if (type === ReminderType.PROJECT_CREATED && project.isUnscheduled) {
-    return [
-      "【新项目待安排】",
-      "",
-      projectLine,
-      `负责人：${ownerName}`,
-      `缺少：${missing.length ? missing.join(" / ") : "排期信息"}`,
-      "",
-      "请确认是否排入本周计划。"
-    ].join("\n");
-  }
+  const projectLevel = currentRound?.level || project.level;
+  const projectLine = `[${projectLevel}] ${project.name}`;
+  const roundLine = `轮次：R${project.currentRoundIndex || 1}`;
+  const startDate = currentRound?.startDate || project.startDate;
+  const alignmentDate = currentRound?.alignmentDate || project.alignmentDate;
+  const deliveryDate = currentRound?.deliveryDate || project.deliveryDate;
+  const planLine = startDate || deliveryDate ? `计划：${formatDate(startDate)} - ${formatDate(deliveryDate)}` : "";
 
   if (type === ReminderType.PROJECT_CREATED) {
     return [
-      "【新项目已录入】",
+      `【${customTitle || "项目已安排"}】`,
       "",
       projectLine,
+      roundLine,
       `负责人：${ownerName}`,
       `设计师：${designerLine}`,
       planLine,
@@ -254,7 +261,7 @@ function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.f
       "",
       projectLine,
       `设计师：${designerLine}`,
-      `交付：${formatDate(project.deliveryDate, "md")}`,
+      `交付：${formatDate(deliveryDate, "md")}`,
       "",
       "请确认输出文件与交付内容。"
     ].join("\n");
@@ -267,7 +274,7 @@ function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.f
       projectLine,
       `负责人：${ownerName}`,
       `设计师：${designerLine}`,
-      `对齐：${formatDate(project.alignmentDate, "md")}`,
+      `对齐：${formatDate(alignmentDate, "md")}`,
       "",
       "请准备中途对齐内容。"
     ].join("\n");
@@ -280,7 +287,7 @@ function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.f
       projectLine,
       `负责人：${ownerName}`,
       `设计师：${designerLine}`,
-      `原交付：${formatDate(project.deliveryDate, "md")}`,
+      `原交付：${formatDate(deliveryDate, "md")}`,
       "当前状态：延期",
       "",
       "请确认继续推进、待反馈或开启下一轮。"
@@ -309,6 +316,11 @@ function buildProjectMessage(project: Awaited<ReturnType<typeof prisma.project.f
     "",
     "请确认项目推进状态。"
   ].filter(Boolean).join("\n");
+}
+
+function getCurrentMessageRound(project: { currentRoundIndex?: number | null; rounds?: Array<{ roundIndex: number; level: string; designerIds: string; startDate: Date | string | null; alignmentDate: Date | string | null; deliveryDate: Date | string | null }> }) {
+  const roundIndex = project.currentRoundIndex || 1;
+  return project.rounds?.find((round) => round.roundIndex === roundIndex) || null;
 }
 
 async function buildWeeklyMessage(weekStart: Date) {
