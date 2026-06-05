@@ -475,7 +475,7 @@ function weeklyMessageStageLabel(item: {
 }) {
   const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_ALIGNMENT, ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
   const stopDate = item.project.scheduleStoppedAt || item.project.completedAt;
-  if (stoppedStatuses.has(item.project.status) && stopDate && toISODate(item.date) === toISODate(stopDate)) return statusLabels[item.project.status as ProjectStatus];
+  if (item.project.status !== ProjectStatus.WAITING_ALIGNMENT && stoppedStatuses.has(item.project.status) && stopDate && toISODate(item.date) === toISODate(stopDate)) return statusLabels[item.project.status as ProjectStatus];
   if (item.phaseName === "延期设计推进") return "延期";
   if (item.isDeliveryNode) return "设计交付";
   if (item.isAlignmentNode) return "中途对齐";

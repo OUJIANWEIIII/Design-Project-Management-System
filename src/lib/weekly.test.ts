@@ -76,11 +76,11 @@ describe("weekly overview date facts", () => {
     expect(getWeeklyProjectItemsForDate(project, "2026-06-03")).toHaveLength(0);
   });
 
-  it("stops future planned work after follow-up status without rewriting history", () => {
+  it("stops follow-up status without showing follow-up or delayed continuation in weekly overview", () => {
     const project: WeeklyProject = {
       ...baseProject,
       status: ProjectStatus.WAITING_ALIGNMENT,
-      scheduleStoppedAt: "2026-06-01T09:30:00.000Z",
+      scheduleStoppedAt: "2026-06-05T09:30:00.000Z",
       scheduleItems: [
         ...baseProject.scheduleItems,
         {
@@ -96,11 +96,16 @@ describe("weekly overview date facts", () => {
       ]
     };
 
-    const stopDay = getWeeklyProjectItemsForDate(project, "2026-06-01");
-    const futureDay = getWeeklyProjectItemsForDate(project, "2026-06-03");
+    const plannedDay = getWeeklyProjectItemsForDate(project, "2026-06-01");
+    const plannedAlignmentDay = getWeeklyProjectItemsForDate(project, "2026-06-03");
+    const delayedContinuationDay = getWeeklyProjectItemsForDate(project, "2026-06-04");
+    const futureDay = getWeeklyProjectItemsForDate(project, "2026-06-08");
 
-    expect(stopDay).toHaveLength(1);
-    expect(weeklyStageLabel(project, stopDay[0])).toBe("跟进");
+    expect(plannedDay).toHaveLength(1);
+    expect(weeklyStageLabel(project, plannedDay[0])).toBe("需求理解");
+    expect(plannedAlignmentDay).toHaveLength(1);
+    expect(weeklyStageLabel(project, plannedAlignmentDay[0])).toBe("中途对齐");
+    expect(delayedContinuationDay).toHaveLength(0);
     expect(futureDay).toHaveLength(0);
   });
 

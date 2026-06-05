@@ -48,7 +48,7 @@ export function getWeeklyProjectItemsForDate(project: WeeklyProject, date: strin
 
 export function weeklyStageLabel(project: Pick<WeeklyProject, "status" | "completedAt" | "scheduleStoppedAt">, item: Pick<WeeklyScheduleItem, "date" | "phaseName" | "isDeliveryNode" | "isAlignmentNode" | "workdayIndex">) {
   const stopDate = project.scheduleStoppedAt || project.completedAt;
-  if (stoppedStatuses.has(project.status) && stopDate && toISODate(item.date) === toISODate(stopDate)) return statusLabels[project.status as ProjectStatus];
+  if (project.status !== ProjectStatus.WAITING_ALIGNMENT && stoppedStatuses.has(project.status) && stopDate && toISODate(item.date) === toISODate(stopDate)) return statusLabels[project.status as ProjectStatus];
   if (item.phaseName === "延期设计推进") return "延期";
   if (item.isDeliveryNode) return "设计交付";
   if (item.isAlignmentNode) return "中途对齐";
@@ -97,6 +97,7 @@ function getHistoricalRoundContinuationItems(project: WeeklyProject, date: strin
 }
 
 function getCurrentRoundContinuationItem(project: WeeklyProject, date: string): WeeklyScheduleItem | null {
+  if (project.status === ProjectStatus.WAITING_ALIGNMENT) return null;
   const continuingStatuses = new Set<string>([ProjectStatus.DELAYED]);
   if (!continuingStatuses.has(project.status) && !stoppedStatuses.has(project.status)) return null;
 

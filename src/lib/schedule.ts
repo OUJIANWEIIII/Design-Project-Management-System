@@ -212,6 +212,7 @@ export function isDelayed(project: {
 }): boolean {
   if (
     !project.deliveryDate ||
+    project.status === ProjectStatus.WAITING_ALIGNMENT ||
     project.status === ProjectStatus.WAITING_FEEDBACK ||
     project.status === ProjectStatus.COMPLETED ||
     project.status === ProjectStatus.PAUSED

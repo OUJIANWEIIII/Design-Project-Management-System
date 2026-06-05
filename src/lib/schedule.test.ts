@@ -62,6 +62,7 @@ describe("industrial design schedule rules", () => {
     const deliveryDate = new Date(2026, 5, 5);
 
     expect(isDelayed({ status: ProjectStatus.IN_PROGRESS, deliveryDate })).toBe(true);
+    expect(isDelayed({ status: ProjectStatus.WAITING_ALIGNMENT, deliveryDate })).toBe(false);
     expect(isDelayed({ status: ProjectStatus.WAITING_FEEDBACK, deliveryDate })).toBe(false);
     expect(isDelayed({ status: ProjectStatus.COMPLETED, deliveryDate })).toBe(false);
     expect(isDelayed({ status: ProjectStatus.PAUSED, deliveryDate })).toBe(false);
