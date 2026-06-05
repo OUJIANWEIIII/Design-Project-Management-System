@@ -7,11 +7,11 @@ import { createAndSendProjectCreatedReminder, rebuildReminderPlan } from "./remi
 
 const continuingStatuses = new Set<ProjectStatus>([
   ProjectStatus.IN_PROGRESS,
-  ProjectStatus.WAITING_ALIGNMENT,
   ProjectStatus.DELAYED
 ]);
 
 const stoppedButHistoricalStatuses = new Set<ProjectStatus>([
+  ProjectStatus.WAITING_ALIGNMENT,
   ProjectStatus.WAITING_FEEDBACK,
   ProjectStatus.COMPLETED,
   ProjectStatus.PAUSED

@@ -219,12 +219,12 @@ function ProjectsPage({ data, quickFilter, setQuickFilter, openProject, editProj
     if (quickFilter === "全部") return true;
     if (quickFilter === "未安排") return item.isUnscheduled;
     if (quickFilter === "设计中") return !item.isUnscheduled && ["NOT_STARTED", "IN_PROGRESS"].includes(item.status);
-    if (quickFilter === "对齐") return item.status === "WAITING_ALIGNMENT";
+    if (quickFilter === "跟进") return item.status === "WAITING_ALIGNMENT";
     return statusLabels[item.status] === quickFilter;
   });
   const statFilterTarget = (label: string) => {
     if (label === "未开始项目" || label === "进行中项目" || label === "本周交付项目") return "设计中";
-    if (label === "待对齐项目") return "对齐";
+    if (label === "跟进项目") return "跟进";
     return label.replace("项目", "").replace("全部", "全部");
   };
   const statItems = [
@@ -232,14 +232,14 @@ function ProjectsPage({ data, quickFilter, setQuickFilter, openProject, editProj
     ["未安排项目", data.projects.filter((item) => item.isUnscheduled).length],
     ["未开始项目", data.projects.filter((item) => item.status === "NOT_STARTED").length],
     ["进行中项目", data.projects.filter((item) => item.status === "IN_PROGRESS").length],
-    ["待对齐项目", data.projects.filter((item) => item.status === "WAITING_ALIGNMENT").length],
+    ["跟进项目", data.projects.filter((item) => item.status === "WAITING_ALIGNMENT").length],
     ["待反馈项目", data.projects.filter((item) => item.status === "WAITING_FEEDBACK").length],
     ["本周交付项目", data.projects.filter((item) => item.deliveryDate && week.includes(toISODate(item.deliveryDate))).length],
     ["已完成项目", data.projects.filter((item) => item.status === "COMPLETED").length],
     ["已延期项目", data.projects.filter((item) => item.status === "DELAYED").length],
     ["已暂停项目", data.projects.filter((item) => item.status === "PAUSED").length]
   ];
-  const quick = ["全部", "未安排", "设计中", "对齐", "待反馈", "已延期", "已暂停", "已完成"];
+  const quick = ["全部", "未安排", "设计中", "跟进", "待反馈", "已延期", "已暂停", "已完成"];
   return (
     <>
       <section className="page-head"><div><span className="eyebrow">PROJECTS ( OVERVIEW )</span><h1>项目汇总</h1></div><button className="primary" onClick={newProject}>新建项目</button></section>
@@ -318,20 +318,21 @@ function WeekRow({ data, designer, dates, openProject }: { data: Bootstrap; desi
 
 function RemindersPage({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const [statusFilter, setStatusFilter] = useState<Reminder["status"] | "ALL">("ALL");
+  const activeReminders = data.reminders.filter((item) => item.status !== "SENT");
   const counts = {
-    PENDING: data.reminders.filter((item) => item.status === "PENDING").length,
+    PENDING: activeReminders.filter((item) => item.status === "PENDING").length,
     SENT: data.reminders.filter((item) => item.status === "SENT").length,
-    FAILED: data.reminders.filter((item) => item.status === "FAILED").length,
-    REVOKED: data.reminders.filter((item) => item.status === "REVOKED").length
+    FAILED: activeReminders.filter((item) => item.status === "FAILED").length,
+    REVOKED: activeReminders.filter((item) => item.status === "REVOKED").length
   };
-  const visible = statusFilter === "ALL" ? data.reminders : data.reminders.filter((item) => item.status === statusFilter);
+  const visible = statusFilter === "ALL" ? activeReminders : activeReminders.filter((item) => item.status === statusFilter);
   const send = async (id: string) => {
     await fetch(`/api/reminders/${id}/send`, { method: "POST" });
     await refresh();
   };
-  const revoke = async (id: string) => {
-    if (!confirm("确认作废这条提醒？已发送到群里的消息无法真正删除，系统会发送一条作废通知。")) return;
-    await fetch(`/api/reminders/${id}/revoke`, { method: "POST" });
+  const deleteReminder = async (id: string) => {
+    if (!confirm("确认删除这条提醒记录？此操作只清理系统记录，不会撤回企业微信群里的消息。")) return;
+    await fetch(`/api/reminders/${id}`, { method: "DELETE" });
     await refresh();
   };
   const clearReminders = async () => {
@@ -340,13 +341,14 @@ function RemindersPage({ data, refresh }: { data: Bootstrap; refresh: () => Prom
     await fetch(`/api/reminders?status=${statusFilter}`, { method: "DELETE" });
     await refresh();
   };
+  const groups = groupRemindersByProject(visible, data.projects);
   return (
     <>
       <section className="page-head"><div><span className="eyebrow">ALERTS ( LOG )</span><h1>提醒记录</h1></div><div className="head-actions"><button className="ghost" onClick={async () => { await fetch("/api/reminders/rebuild", { method: "POST" }); await refresh(); }}>重建提醒计划</button><button className="danger-action" disabled={!visible.length} onClick={clearReminders}>删除当前记录</button></div></section>
       <section className="reminder-toolbar">
-        {(["ALL", "PENDING", "SENT", "FAILED", "REVOKED"] as const).map((status) => <button className={statusFilter === status ? "active" : ""} key={status} onClick={() => setStatusFilter(status)}>{status === "ALL" ? "全部" : reminderStatusLabels[status]} <b>{status === "ALL" ? data.reminders.length : counts[status]}</b></button>)}
+        {(["ALL", "PENDING", "SENT", "FAILED", "REVOKED"] as const).map((status) => <button className={statusFilter === status ? "active" : ""} key={status} onClick={() => setStatusFilter(status)}>{status === "ALL" ? "全部" : reminderStatusLabels[status]} <b>{status === "ALL" ? activeReminders.length : counts[status]}</b></button>)}
       </section>
-      <section className="panel log-list compact-log">{visible.map((item) => <article className={`log-item ${item.status.toLowerCase()}`} key={item.id}><div className="log-main"><div><strong>{reminderTypeLabels[item.type]}</strong><span>{projectName(data.projects, item.projectId)}</span></div><b className={`send-status ${item.status.toLowerCase()}`}>{reminderStatusLabels[item.status]}</b></div><div className="log-meta"><span>计划 {formatDate(item.scheduledAt)}</span><span>{item.sentAt ? `发送 ${formatDate(item.sentAt)}` : item.channel}</span><span>重试 {item.retryCount} 次</span></div>{item.errorMessage && <div className="log-error">{item.errorMessage}</div>}<pre>{item.messageContent}</pre><div className="actions log-actions">{item.status !== "SENT" && item.status !== "REVOKED" && <button onClick={() => send(item.id)}>{item.status === "FAILED" ? "重试发送" : "发送"}</button>}{item.status !== "REVOKED" && <button className="danger-action" onClick={() => revoke(item.id)}>{item.status === "SENT" ? "作废并通知" : "作废"}</button>}</div></article>)}</section>
+      <section className="panel log-list project-log">{groups.length ? groups.map((group) => <article className="log-item project-reminder-card" key={group.key}><div className="log-main"><div><strong>{group.title}</strong><span>{group.items.length} 条待处理提醒</span></div><b>{group.items.length}</b></div><div className="project-reminder-items">{group.items.map((item) => <div className={`project-reminder-row ${item.status.toLowerCase()}`} key={item.id}><div><strong>{reminderTypeLabels[item.type]}</strong><span>计划 {formatDate(item.scheduledAt)} · {item.sentAt ? `发送 ${formatDate(item.sentAt)}` : item.channel} · 重试 {item.retryCount} 次</span>{item.errorMessage && <em>{item.errorMessage}</em>}</div><b className={`send-status ${item.status.toLowerCase()}`}>{reminderStatusLabels[item.status]}</b><pre>{item.messageContent}</pre><div className="actions log-actions">{item.status !== "SENT" && item.status !== "REVOKED" && <button onClick={() => send(item.id)}>{item.status === "FAILED" ? "重试发送" : "发送"}</button>}<button className="danger-action" onClick={() => deleteReminder(item.id)}>删除</button></div></div>)}</div></article>) : <div className="empty-state">当前没有需要处理的提醒记录。</div>}</section>
     </>
   );
 }
@@ -431,7 +433,7 @@ function badge(status: keyof typeof statusLabels) {
 
 function statusToneClass(label: string) {
   if (["未安排项目", "未安排", "未开始项目", "未开始", "已延期项目", "已延期", "已暂停项目", "已暂停"].includes(label)) return "tone-red";
-  if (["进行中项目", "进行中", "设计中", "待对齐项目", "待对齐", "对齐", "本周交付项目", "本周交付"].includes(label)) return "tone-green";
+  if (["进行中项目", "进行中", "设计中", "跟进项目", "跟进", "本周交付项目", "本周交付"].includes(label)) return "tone-green";
   if (["待反馈项目", "待反馈"].includes(label)) return "tone-orange";
   if (["已完成项目", "已完成"].includes(label)) return "tone-gray";
   return "";
@@ -487,6 +489,20 @@ function projectName(projects: Project[], id: string | null) {
   if (!id) return "全局提醒";
   const project = projects.find((item) => item.id === id);
   return project ? `[${project.level}] ${project.name}` : "项目提醒";
+}
+
+function groupRemindersByProject(reminders: Reminder[], projects: Project[]) {
+  const groups = new Map<string, { key: string; title: string; items: Reminder[] }>();
+  reminders.forEach((item) => {
+    const key = item.projectId || "GLOBAL";
+    const group = groups.get(key) || { key, title: projectName(projects, item.projectId), items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    items: group.items.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+  }));
 }
 
 function addWeek(value: string, amount: number) {

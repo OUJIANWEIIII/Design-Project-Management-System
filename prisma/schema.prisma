@@ -134,6 +134,21 @@ model Reminder {
   @@index([projectId])
 }
 
+model ReminderSendLock {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  projectId   String?
+  roundIndex  Int?
+  type        String
+  scheduledAt DateTime?
+  sentAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([type])
+}
+
 model Settings {
   id               String   @id @default("default")
   wechatWebhookUrl String   @default("")

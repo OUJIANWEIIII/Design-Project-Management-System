@@ -76,6 +76,34 @@ describe("weekly overview date facts", () => {
     expect(getWeeklyProjectItemsForDate(project, "2026-06-03")).toHaveLength(0);
   });
 
+  it("stops future planned work after follow-up status without rewriting history", () => {
+    const project: WeeklyProject = {
+      ...baseProject,
+      status: ProjectStatus.WAITING_ALIGNMENT,
+      scheduleStoppedAt: "2026-06-01T09:30:00.000Z",
+      scheduleItems: [
+        ...baseProject.scheduleItems,
+        {
+          id: "p1-d3",
+          roundIndex: 1,
+          date: "2026-06-03",
+          workdayIndex: 3,
+          phaseName: "中途对齐",
+          isAlignmentNode: true,
+          isDeliveryNode: false,
+          designerIds: ["d1"]
+        }
+      ]
+    };
+
+    const stopDay = getWeeklyProjectItemsForDate(project, "2026-06-01");
+    const futureDay = getWeeklyProjectItemsForDate(project, "2026-06-03");
+
+    expect(stopDay).toHaveLength(1);
+    expect(weeklyStageLabel(project, stopDay[0])).toBe("跟进");
+    expect(futureDay).toHaveLength(0);
+  });
+
   it("keeps previous round delayed history after a new round starts", () => {
     const project: WeeklyProject = {
       ...baseProject,

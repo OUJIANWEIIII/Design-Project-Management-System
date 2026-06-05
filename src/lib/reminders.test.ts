@@ -25,7 +25,7 @@ describe("reminder cleanup", () => {
     await prisma.reminder.deleteMany({ where: { id: { in: createdIds.splice(0) } } });
   });
 
-  it("removes finished reminder records after two days and keeps pending records", async () => {
+  it("removes sent reminder records immediately and keeps pending records", async () => {
     const now = new Date("2026-06-03T09:00:00+08:00");
     const old = new Date("2026-05-31T09:00:00+08:00");
     const recent = new Date("2026-06-02T09:00:00+08:00");
@@ -35,13 +35,13 @@ describe("reminder cleanup", () => {
     const oldPending = await createReminder(ReminderStatus.PENDING, old);
 
     const result = await cleanupOldReminderRecords(now);
-    expect(result.count).toBeGreaterThanOrEqual(2);
+    expect(result.count).toBeGreaterThanOrEqual(3);
 
     const remaining = await prisma.reminder.findMany({ where: { id: { in: [oldSent.id, oldFailed.id, recentSent.id, oldPending.id] } } });
     const remainingIds = new Set(remaining.map((item) => item.id));
     expect(remainingIds.has(oldSent.id)).toBe(false);
     expect(remainingIds.has(oldFailed.id)).toBe(false);
-    expect(remainingIds.has(recentSent.id)).toBe(true);
+    expect(remainingIds.has(recentSent.id)).toBe(false);
     expect(remainingIds.has(oldPending.id)).toBe(true);
   });
 });

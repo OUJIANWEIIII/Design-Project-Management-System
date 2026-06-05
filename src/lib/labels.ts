@@ -1,7 +1,7 @@
 export const statusLabels = {
   NOT_STARTED: "未开始",
   IN_PROGRESS: "进行中",
-  WAITING_ALIGNMENT: "待对齐",
+  WAITING_ALIGNMENT: "跟进",
   WAITING_FEEDBACK: "待反馈",
   COMPLETED: "已完成",
   DELAYED: "已延期",

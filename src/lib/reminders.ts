@@ -11,6 +11,8 @@ export async function rebuildReminderPlan() {
   const designers = await prisma.designer.findMany();
   const namesById = new Map(designers.map((item) => [item.id, item.name]));
   const locked = await prisma.reminder.findMany({ where: { status: { in: [ReminderStatus.SENT, ReminderStatus.REVOKED] } } });
+  const sentLocks = await prisma.reminderSendLock.findMany();
+  const sentLockKeys = new Set(sentLocks.map((item) => item.key));
   const failed = await prisma.reminder.findMany({ where: { status: ReminderStatus.FAILED } });
   await prisma.reminder.deleteMany({ where: { status: { notIn: [ReminderStatus.SENT, ReminderStatus.FAILED, ReminderStatus.REVOKED] } } });
   const weekStart = startOfWeek(new Date());
@@ -25,6 +27,7 @@ export async function rebuildReminderPlan() {
     planned.push(...buildProjectReminderRows(project, namesById));
   }
   for (const item of planned) {
+    if (sentLockKeys.has(reminderSendKey(item))) continue;
     const exists = locked.find((old) => old.projectId === ("projectId" in item ? item.projectId : null) && old.type === item.type && old.roundIndex === (item.roundIndex ?? null) && old.scheduledAt.getTime() === item.scheduledAt.getTime());
     if (exists) continue;
     const failedReminder = failed.find((old) => old.projectId === ("projectId" in item ? item.projectId : null) && old.type === item.type && old.roundIndex === (item.roundIndex ?? null) && old.scheduledAt.getTime() === item.scheduledAt.getTime());
@@ -42,12 +45,16 @@ export async function createAndSendProjectCreatedReminder(projectId: string, tit
   const designers = await prisma.designer.findMany();
   const namesById = new Map(designers.map((item) => [item.id, item.name]));
   const roundIndex = project.currentRoundIndex || 1;
+  const scheduledAt = new Date();
+  const lockKey = reminderSendKey({ projectId: project.id, roundIndex, type: ReminderType.PROJECT_CREATED, scheduledAt });
+  const sentLock = await prisma.reminderSendLock.findUnique({ where: { key: lockKey } });
+  if (sentLock) return null;
   const reminder = await prisma.reminder.create({
     data: {
       projectId: project.id,
       roundIndex,
       type: ReminderType.PROJECT_CREATED,
-      scheduledAt: new Date(),
+      scheduledAt,
       status: ReminderStatus.PENDING,
       messageContent: buildProjectMessage(project, ReminderType.PROJECT_CREATED, namesById, title)
     }
@@ -64,6 +71,10 @@ export async function sendDueReminders() {
   const results = [];
   for (const reminder of due) {
     if (reminder.type === ReminderType.WEEKLY_SCHEDULE && !isWeeklyScheduleSendWindow(now)) continue;
+    if (await hasReminderBeenSent(reminder)) {
+      await prisma.reminder.delete({ where: { id: reminder.id } });
+      continue;
+    }
     try {
       results.push(await sendReminder(reminder.id));
     } catch (error) {
@@ -83,8 +94,7 @@ export async function cleanupOldReminderRecords(now = new Date(), retentionDays 
   return prisma.reminder.deleteMany({
     where: {
       OR: [
-        { status: ReminderStatus.SENT, sentAt: { lt: cutoff } },
-        { status: ReminderStatus.SENT, sentAt: null, updatedAt: { lt: cutoff } },
+        { status: ReminderStatus.SENT },
         { status: { in: [ReminderStatus.FAILED, ReminderStatus.REVOKED] }, scheduledAt: { lt: cutoff } }
       ]
     }
@@ -95,10 +105,14 @@ export function isWeeklyScheduleSendWindow(date: Date) {
   return date.getDay() === 1 && date.getHours() === 9;
 }
 
-export async function sendReminder(id: string) {
+export async function sendReminder(id: string, options: { manual?: boolean } = {}) {
   const settings = await prisma.settings.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
   const reminder = await prisma.reminder.findUnique({ where: { id } });
   if (!reminder) throw new Error("提醒记录不存在");
+  if (!options.manual && await hasReminderBeenSent(reminder)) {
+    await prisma.reminder.delete({ where: { id } });
+    return null;
+  }
   if (!settings.wechatWebhookUrl) {
     return prisma.reminder.update({
       where: { id },
@@ -123,6 +137,7 @@ export async function sendReminder(id: string) {
     });
     const result = await response.json();
     const success = result.errcode === 0;
+    if (success) await rememberSentReminder(reminder);
     return prisma.reminder.update({
       where: { id },
       data: {
@@ -138,6 +153,35 @@ export async function sendReminder(id: string) {
       data: { status: ReminderStatus.FAILED, errorMessage: error instanceof Error ? error.message : "发送失败", retryCount: { increment: 1 } }
     });
   }
+}
+
+function reminderSendKey(item: { projectId?: string | null; roundIndex?: number | null; type: string; scheduledAt?: Date | string | null }) {
+  const projectPart = item.projectId || "GLOBAL";
+  const roundPart = item.roundIndex ?? 0;
+  const scheduledPart = item.type === ReminderType.PROJECT_CREATED
+    ? "ONCE"
+    : item.scheduledAt ? toISODate(item.scheduledAt) : "NONE";
+  return [projectPart, roundPart, item.type, scheduledPart].join("|");
+}
+
+async function hasReminderBeenSent(reminder: { projectId: string | null; roundIndex: number | null; type: string; scheduledAt: Date }) {
+  return Boolean(await prisma.reminderSendLock.findUnique({ where: { key: reminderSendKey(reminder) } }));
+}
+
+async function rememberSentReminder(reminder: { projectId: string | null; roundIndex: number | null; type: string; scheduledAt: Date }) {
+  const now = new Date();
+  await prisma.reminderSendLock.upsert({
+    where: { key: reminderSendKey(reminder) },
+    update: { sentAt: now },
+    create: {
+      key: reminderSendKey(reminder),
+      projectId: reminder.projectId,
+      roundIndex: reminder.roundIndex,
+      type: reminder.type,
+      scheduledAt: reminder.scheduledAt,
+      sentAt: now
+    }
+  });
 }
 
 export async function revokeReminder(id: string) {
@@ -417,7 +461,7 @@ type WeeklyProjectWithSchedule = Awaited<ReturnType<typeof prisma.project.findMa
 };
 
 function isStoppedAfterDate(status: string, stopDate: string | Date | null | undefined, date: Date) {
-  const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
+  const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_ALIGNMENT, ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
   return stoppedStatuses.has(status) && !!stopDate && toISODate(date) > toISODate(stopDate);
 }
 
@@ -429,7 +473,7 @@ function weeklyMessageStageLabel(item: {
   date: Date;
   project: { status: string; scheduleStoppedAt?: string | null; completedAt?: string | null };
 }) {
-  const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
+  const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_ALIGNMENT, ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
   const stopDate = item.project.scheduleStoppedAt || item.project.completedAt;
   if (stoppedStatuses.has(item.project.status) && stopDate && toISODate(item.date) === toISODate(stopDate)) return statusLabels[item.project.status as ProjectStatus];
   if (item.phaseName === "延期设计推进") return "延期";

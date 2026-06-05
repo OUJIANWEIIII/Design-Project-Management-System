@@ -27,6 +27,7 @@ export type WeeklyProject = {
 };
 
 const stoppedStatuses = new Set<string>([
+  ProjectStatus.WAITING_ALIGNMENT,
   ProjectStatus.WAITING_FEEDBACK,
   ProjectStatus.COMPLETED,
   ProjectStatus.PAUSED
@@ -38,10 +39,10 @@ export function isStoppedAfterDate(project: Pick<WeeklyProject, "status" | "comp
 }
 
 export function getWeeklyProjectItemsForDate(project: WeeklyProject, date: string): WeeklyScheduleItem[] {
+  if (isStoppedAfterDate(project, date)) return [];
   const plannedItems = project.scheduleItems.filter((item) => toISODate(item.date) === date);
   const continuationItems = getContinuationItems(project, date);
   if (plannedItems.length) return plannedItems;
-  if (isStoppedAfterDate(project, date)) return [];
   return continuationItems;
 }
 

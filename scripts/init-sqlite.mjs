@@ -4,6 +4,7 @@ const prisma = new PrismaClient();
 
 const statements = [
   `PRAGMA foreign_keys = OFF`,
+  `DROP TABLE IF EXISTS "ReminderSendLock"`,
   `DROP TABLE IF EXISTS "Reminder"`,
   `DROP TABLE IF EXISTS "ProjectScheduleItem"`,
   `DROP TABLE IF EXISTS "FeedbackEvent"`,
@@ -62,6 +63,7 @@ const statements = [
     "autoDeliveryDate" DATETIME,
     "alignmentDate" DATETIME,
     "deliveryDate" DATETIME,
+    "allowReminder" BOOLEAN NOT NULL DEFAULT true,
     "submittedAt" DATETIME,
     "feedbackReceivedAt" DATETIME,
     "notes" TEXT NOT NULL DEFAULT '',
@@ -122,6 +124,20 @@ const statements = [
   `CREATE INDEX "Reminder_status_idx" ON "Reminder"("status")`,
   `CREATE INDEX "Reminder_scheduledAt_idx" ON "Reminder"("scheduledAt")`,
   `CREATE INDEX "Reminder_projectId_idx" ON "Reminder"("projectId")`,
+  `CREATE TABLE "ReminderSendLock" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "key" TEXT NOT NULL,
+    "projectId" TEXT,
+    "roundIndex" INTEGER,
+    "type" TEXT NOT NULL,
+    "scheduledAt" DATETIME,
+    "sentAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX "ReminderSendLock_key_key" ON "ReminderSendLock"("key")`,
+  `CREATE INDEX "ReminderSendLock_projectId_idx" ON "ReminderSendLock"("projectId")`,
+  `CREATE INDEX "ReminderSendLock_type_idx" ON "ReminderSendLock"("type")`,
   `CREATE TABLE "Settings" (
     "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
     "wechatWebhookUrl" TEXT NOT NULL DEFAULT '',
