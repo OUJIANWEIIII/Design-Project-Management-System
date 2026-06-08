@@ -15,8 +15,8 @@ export async function rebuildReminderPlan() {
   const sentLockKeys = new Set(sentLocks.map((item) => item.key));
   const failed = await prisma.reminder.findMany({ where: { status: ReminderStatus.FAILED } });
   await prisma.reminder.deleteMany({ where: { status: { notIn: [ReminderStatus.SENT, ReminderStatus.FAILED, ReminderStatus.REVOKED] } } });
-  const weekStart = startOfWeek(new Date());
-  const planned: Array<{ projectId?: string; roundIndex?: number; type: ReminderType; scheduledAt: Date; messageContent: string }> = [
+  const weekStart = nextWeeklyReminderWeekStart(new Date());
+  const planned: PlannedReminder[] = [
     {
       type: ReminderType.WEEKLY_SCHEDULE,
       scheduledAt: dateTimeAt(weekStart, 9, 0),
@@ -27,15 +27,20 @@ export async function rebuildReminderPlan() {
     planned.push(...buildProjectReminderRows(project, namesById));
   }
   for (const item of planned) {
-    if (sentLockKeys.has(reminderSendKey(item))) continue;
-    const exists = locked.find((old) => old.projectId === ("projectId" in item ? item.projectId : null) && old.type === item.type && old.roundIndex === (item.roundIndex ?? null) && old.scheduledAt.getTime() === item.scheduledAt.getTime());
+    const dedupeKey = reminderSendKey(item);
+    if (sentLockKeys.has(dedupeKey)) continue;
+    const exists = locked.find((old) => reminderSendKey(old) === dedupeKey || old.dedupeKey === dedupeKey);
     if (exists) continue;
-    const failedReminder = failed.find((old) => old.projectId === ("projectId" in item ? item.projectId : null) && old.type === item.type && old.roundIndex === (item.roundIndex ?? null) && old.scheduledAt.getTime() === item.scheduledAt.getTime());
+    const failedReminder = failed.find((old) => reminderSendKey(old) === dedupeKey || old.dedupeKey === dedupeKey);
     if (failedReminder) {
-      await prisma.reminder.update({ where: { id: failedReminder.id }, data: { messageContent: item.messageContent } });
+      await prisma.reminder.update({ where: { id: failedReminder.id }, data: { dedupeKey, messageContent: item.messageContent } });
       continue;
     }
-    await prisma.reminder.create({ data: { ...item, status: ReminderStatus.PENDING } });
+    try {
+      await prisma.reminder.create({ data: { ...item, dedupeKey, status: ReminderStatus.PENDING } });
+    } catch (error) {
+      if (!isUniqueConflict(error)) throw error;
+    }
   }
 }
 
@@ -46,11 +51,15 @@ export async function createAndSendProjectCreatedReminder(projectId: string, tit
   const namesById = new Map(designers.map((item) => [item.id, item.name]));
   const roundIndex = project.currentRoundIndex || 1;
   const scheduledAt = new Date();
-  const lockKey = reminderSendKey({ projectId: project.id, roundIndex, type: ReminderType.PROJECT_CREATED, scheduledAt });
-  const sentLock = await prisma.reminderSendLock.findUnique({ where: { key: lockKey } });
+  const dedupeKey = reminderSendKey({ projectId: project.id, roundIndex, type: ReminderType.PROJECT_CREATED, scheduledAt });
+  const sentLock = await prisma.reminderSendLock.findUnique({ where: { key: dedupeKey } });
   if (sentLock) return null;
+  const existing = await prisma.reminder.findUnique({ where: { dedupeKey } });
+  if (existing?.status === ReminderStatus.SENT || existing?.status === ReminderStatus.REVOKED) return null;
+  if (existing) await prisma.reminder.delete({ where: { id: existing.id } });
   const reminder = await prisma.reminder.create({
     data: {
+      dedupeKey,
       projectId: project.id,
       roundIndex,
       type: ReminderType.PROJECT_CREATED,
@@ -89,6 +98,10 @@ function isRecordMissingError(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2025";
 }
 
+function isUniqueConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: string }).code === "P2002";
+}
+
 export async function cleanupOldReminderRecords(now = new Date(), retentionDays = 2) {
   const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
   return prisma.reminder.deleteMany({
@@ -103,6 +116,12 @@ export async function cleanupOldReminderRecords(now = new Date(), retentionDays 
 
 export function isWeeklyScheduleSendWindow(date: Date) {
   return date.getDay() === 1 && date.getHours() === 9;
+}
+
+export function nextWeeklyReminderWeekStart(now: Date) {
+  const currentWeekStart = startOfWeek(now);
+  const currentWeekReminderWindowEnd = dateTimeAt(currentWeekStart, 10, 0);
+  return now.getTime() >= currentWeekReminderWindowEnd.getTime() ? addDays(currentWeekStart, 7) : currentWeekStart;
 }
 
 export async function sendReminder(id: string, options: { manual?: boolean } = {}) {
@@ -155,7 +174,7 @@ export async function sendReminder(id: string, options: { manual?: boolean } = {
   }
 }
 
-function reminderSendKey(item: { projectId?: string | null; roundIndex?: number | null; type: string; scheduledAt?: Date | string | null }) {
+export function reminderSendKey(item: { projectId?: string | null; roundIndex?: number | null; type: string; scheduledAt?: Date | string | null }) {
   const projectPart = item.projectId || "GLOBAL";
   const roundPart = item.roundIndex ?? 0;
   const scheduledPart = item.type === ReminderType.PROJECT_CREATED
@@ -163,6 +182,14 @@ function reminderSendKey(item: { projectId?: string | null; roundIndex?: number 
     : item.scheduledAt ? toISODate(item.scheduledAt) : "NONE";
   return [projectPart, roundPart, item.type, scheduledPart].join("|");
 }
+
+type PlannedReminder = {
+  projectId?: string;
+  roundIndex?: number;
+  type: ReminderType;
+  scheduledAt: Date;
+  messageContent: string;
+};
 
 async function hasReminderBeenSent(reminder: { projectId: string | null; roundIndex: number | null; type: string; scheduledAt: Date }) {
   return Boolean(await prisma.reminderSendLock.findUnique({ where: { key: reminderSendKey(reminder) } }));

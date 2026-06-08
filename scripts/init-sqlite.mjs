@@ -107,6 +107,7 @@ const statements = [
   `CREATE INDEX "ProjectScheduleItem_roundId_idx" ON "ProjectScheduleItem"("roundId")`,
   `CREATE TABLE "Reminder" (
     "id" TEXT NOT NULL PRIMARY KEY,
+    "dedupeKey" TEXT,
     "projectId" TEXT,
     "roundIndex" INTEGER,
     "type" TEXT NOT NULL,
@@ -121,6 +122,7 @@ const statements = [
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Reminder_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
+  `CREATE UNIQUE INDEX "Reminder_dedupeKey_key" ON "Reminder"("dedupeKey")`,
   `CREATE INDEX "Reminder_status_idx" ON "Reminder"("status")`,
   `CREATE INDEX "Reminder_scheduledAt_idx" ON "Reminder"("scheduledAt")`,
   `CREATE INDEX "Reminder_projectId_idx" ON "Reminder"("projectId")`,

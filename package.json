@@ -9,6 +9,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:init": "node scripts/init-sqlite.mjs",
+    "db:add-reminder-dedupe": "node scripts/add-reminder-dedupe-key.mjs",
     "prisma:seed": "tsx prisma/seed.ts",
     "test": "vitest run"
   },

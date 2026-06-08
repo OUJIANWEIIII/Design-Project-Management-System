@@ -120,13 +120,17 @@ const emptyForm = {
   notes: ""
 };
 
+function currentWeekStart() {
+  return toISODate(startOfWeek(new Date()));
+}
+
 export default function OpsApp() {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [route, setRoute] = useState("projects");
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [quickFilter, setQuickFilter] = useState("全部");
-  const [weekStart, setWeekStart] = useState(toISODate(startOfWeek(new Date("2026-06-01"))));
+  const [weekStart, setWeekStart] = useState(currentWeekStart());
 
   async function refresh() {
     const response = await fetch("/api/bootstrap", { cache: "no-store" });
@@ -186,7 +190,7 @@ export default function OpsApp() {
   );
 
   function nav(target: string, label: string) {
-    return <button className={`nav-item ${route === target ? "active" : ""}`} onClick={() => setRoute(target)}>{label}</button>;
+    return <button className={`nav-item ${route === target ? "active" : ""}`} onClick={() => { if (target === "week") setWeekStart(currentWeekStart()); setRoute(target); }}>{label}</button>;
   }
 
   function openProject(id: string) {
@@ -217,29 +221,29 @@ function ProjectsPage({ data, quickFilter, setQuickFilter, openProject, editProj
   const week = weekDates(startOfWeek(new Date())).map(toISODate);
   const projects = data.projects.filter((item) => {
     if (quickFilter === "全部") return true;
-    if (quickFilter === "未安排") return item.isUnscheduled;
-    if (quickFilter === "设计中") return !item.isUnscheduled && ["NOT_STARTED", "IN_PROGRESS"].includes(item.status);
+    if (quickFilter === "未开始") return item.status === "NOT_STARTED";
+    if (quickFilter === "设计中") return !item.isUnscheduled && item.status === "IN_PROGRESS";
     if (quickFilter === "跟进") return item.status === "WAITING_ALIGNMENT";
     return statusLabels[item.status] === quickFilter;
   });
   const statFilterTarget = (label: string) => {
-    if (label === "未开始项目" || label === "进行中项目" || label === "本周交付项目") return "设计中";
-    if (label === "跟进项目") return "跟进";
+    if (label === "未开始") return "未开始";
+    if (label === "进行中" || label === "本周交付") return "设计中";
+    if (label === "跟进") return "跟进";
     return label.replace("项目", "").replace("全部", "全部");
   };
   const statItems = [
-    ["全部项目", data.projects.length],
-    ["未安排项目", data.projects.filter((item) => item.isUnscheduled).length],
-    ["未开始项目", data.projects.filter((item) => item.status === "NOT_STARTED").length],
-    ["进行中项目", data.projects.filter((item) => item.status === "IN_PROGRESS").length],
-    ["跟进项目", data.projects.filter((item) => item.status === "WAITING_ALIGNMENT").length],
-    ["待反馈项目", data.projects.filter((item) => item.status === "WAITING_FEEDBACK").length],
-    ["本周交付项目", data.projects.filter((item) => item.deliveryDate && week.includes(toISODate(item.deliveryDate))).length],
-    ["已完成项目", data.projects.filter((item) => item.status === "COMPLETED").length],
-    ["已延期项目", data.projects.filter((item) => item.status === "DELAYED").length],
-    ["已暂停项目", data.projects.filter((item) => item.status === "PAUSED").length]
+    ["全部", data.projects.length],
+    ["未开始", data.projects.filter((item) => item.status === "NOT_STARTED").length],
+    ["进行中", data.projects.filter((item) => item.status === "IN_PROGRESS").length],
+    ["跟进", data.projects.filter((item) => item.status === "WAITING_ALIGNMENT").length],
+    ["待反馈", data.projects.filter((item) => item.status === "WAITING_FEEDBACK").length],
+    ["本周交付", data.projects.filter((item) => item.deliveryDate && week.includes(toISODate(item.deliveryDate))).length],
+    ["已完成", data.projects.filter((item) => item.status === "COMPLETED").length],
+    ["已延期", data.projects.filter((item) => item.status === "DELAYED").length],
+    ["已暂停", data.projects.filter((item) => item.status === "PAUSED").length]
   ];
-  const quick = ["全部", "未安排", "设计中", "跟进", "待反馈", "已延期", "已暂停", "已完成"];
+  const quick = ["全部", "未开始", "设计中", "跟进", "待反馈", "已延期", "已暂停", "已完成"];
   return (
     <>
       <section className="page-head"><div><span className="eyebrow">PROJECTS ( OVERVIEW )</span><h1>项目汇总</h1></div><button className="primary" onClick={newProject}>新建项目</button></section>
@@ -335,18 +339,12 @@ function RemindersPage({ data, refresh }: { data: Bootstrap; refresh: () => Prom
     await fetch(`/api/reminders/${id}`, { method: "DELETE" });
     await refresh();
   };
-  const clearReminders = async () => {
-    const label = statusFilter === "ALL" ? "全部提醒记录" : reminderStatusLabels[statusFilter];
-    if (!confirm(`确认删除${label}？此操作只清理系统日志，不会撤回企业微信群里已发送的消息。`)) return;
-    await fetch(`/api/reminders?status=${statusFilter}`, { method: "DELETE" });
-    await refresh();
-  };
   const groups = groupRemindersByProject(visible, data.projects);
   return (
     <>
-      <section className="page-head"><div><span className="eyebrow">ALERTS ( LOG )</span><h1>提醒记录</h1></div><div className="head-actions"><button className="ghost" onClick={async () => { await fetch("/api/reminders/rebuild", { method: "POST" }); await refresh(); }}>重建提醒计划</button><button className="danger-action" disabled={!visible.length} onClick={clearReminders}>删除当前记录</button></div></section>
+      <section className="page-head"><div><span className="eyebrow">ALERTS ( LOG )</span><h1>提醒记录</h1></div></section>
       <section className="reminder-toolbar">
-        {(["ALL", "PENDING", "SENT", "FAILED", "REVOKED"] as const).map((status) => <button className={statusFilter === status ? "active" : ""} key={status} onClick={() => setStatusFilter(status)}>{status === "ALL" ? "全部" : reminderStatusLabels[status]} <b>{status === "ALL" ? activeReminders.length : counts[status]}</b></button>)}
+        {(["ALL", "PENDING", "SENT"] as const).map((status) => <button className={statusFilter === status ? "active" : ""} key={status} onClick={() => setStatusFilter(status)}>{status === "ALL" ? "全部" : reminderStatusLabels[status]} <b>{status === "ALL" ? activeReminders.length : counts[status]}</b></button>)}
       </section>
       <section className="panel log-list project-log">{groups.length ? groups.map((group) => <article className="log-item project-reminder-card" key={group.key}><div className="log-main"><div><strong>{group.title}</strong><span>{group.items.length} 条待处理提醒</span></div><b>{group.items.length}</b></div><div className="project-reminder-items">{group.items.map((item) => <div className={`project-reminder-row ${item.status.toLowerCase()}`} key={item.id}><div><strong>{reminderTypeLabels[item.type]}</strong><span>计划 {formatDate(item.scheduledAt)} · {item.sentAt ? `发送 ${formatDate(item.sentAt)}` : item.channel} · 重试 {item.retryCount} 次</span>{item.errorMessage && <em>{item.errorMessage}</em>}</div><b className={`send-status ${item.status.toLowerCase()}`}>{reminderStatusLabels[item.status]}</b><pre>{item.messageContent}</pre><div className="actions log-actions">{item.status !== "SENT" && item.status !== "REVOKED" && <button onClick={() => send(item.id)}>{item.status === "FAILED" ? "重试发送" : "发送"}</button>}<button className="danger-action" onClick={() => deleteReminder(item.id)}>删除</button></div></div>)}</div></article>) : <div className="empty-state">当前没有需要处理的提醒记录。</div>}</section>
     </>
@@ -432,10 +430,10 @@ function badge(status: keyof typeof statusLabels) {
 }
 
 function statusToneClass(label: string) {
-  if (["未安排项目", "未安排", "未开始项目", "未开始", "已延期项目", "已延期", "已暂停项目", "已暂停"].includes(label)) return "tone-red";
-  if (["进行中项目", "进行中", "设计中", "跟进项目", "跟进", "本周交付项目", "本周交付"].includes(label)) return "tone-green";
-  if (["待反馈项目", "待反馈"].includes(label)) return "tone-orange";
-  if (["已完成项目", "已完成"].includes(label)) return "tone-gray";
+  if (["未开始", "已延期", "已暂停"].includes(label)) return "tone-red";
+  if (["进行中", "设计中", "跟进", "本周交付"].includes(label)) return "tone-green";
+  if (["待反馈"].includes(label)) return "tone-orange";
+  if (["已完成"].includes(label)) return "tone-gray";
   return "";
 }
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { prisma } from "./prisma";
 import { ReminderStatus, ReminderType } from "./enums";
-import { buildProjectMessage, cleanupOldReminderRecords } from "./reminders";
+import { buildProjectMessage, cleanupOldReminderRecords, nextWeeklyReminderWeekStart, reminderSendKey } from "./reminders";
 
 const createdIds: string[] = [];
 
@@ -45,6 +45,77 @@ describe("reminder cleanup", () => {
     expect(remainingIds.has(oldPending.id)).toBe(true);
   });
 });
+
+describe("reminder dedupe", () => {
+  afterEach(async () => {
+    await prisma.reminder.deleteMany({ where: { id: { in: createdIds.splice(0) } } });
+  });
+
+  it("uses one stable key for the same project, round, type and scheduled day", async () => {
+    const key = reminderSendKey({
+      projectId: "project-a",
+      roundIndex: 2,
+      type: ReminderType.DELIVERY_BEFORE,
+      scheduledAt: new Date("2026-06-04T09:30:00+08:00")
+    });
+    const first = await prisma.reminder.create({
+      data: {
+        dedupeKey: key,
+        projectId: null,
+        roundIndex: 2,
+        type: ReminderType.DELIVERY_BEFORE,
+        scheduledAt: new Date("2026-06-04T09:30:00+08:00"),
+        status: ReminderStatus.PENDING,
+        messageContent: "duplicate guard"
+      }
+    });
+    createdIds.push(first.id);
+
+    await expect(prisma.reminder.create({
+      data: {
+        dedupeKey: key,
+        projectId: null,
+        roundIndex: 2,
+        type: ReminderType.DELIVERY_BEFORE,
+        scheduledAt: new Date("2026-06-04T18:00:00+08:00"),
+        status: ReminderStatus.PENDING,
+        messageContent: "duplicate guard again"
+      }
+    })).rejects.toMatchObject({ code: "P2002" });
+  });
+
+  it("treats project-created reminders as once per project round", () => {
+    expect(reminderSendKey({
+      projectId: "project-a",
+      roundIndex: 1,
+      type: ReminderType.PROJECT_CREATED,
+      scheduledAt: new Date("2026-06-04T09:30:00+08:00")
+    })).toBe(reminderSendKey({
+      projectId: "project-a",
+      roundIndex: 1,
+      type: ReminderType.PROJECT_CREATED,
+      scheduledAt: new Date("2026-06-05T09:30:00+08:00")
+    }));
+  });
+});
+
+describe("weekly schedule reminder timing", () => {
+  it("moves to next Monday after this week's Monday 9am send window has passed", () => {
+    expect(localDateKey(nextWeeklyReminderWeekStart(new Date("2026-06-05T10:00:00+08:00")))).toBe("2026-06-08");
+  });
+
+  it("keeps this Monday before the weekly send window", () => {
+    expect(localDateKey(nextWeeklyReminderWeekStart(new Date("2026-06-01T08:30:00+08:00")))).toBe("2026-06-01");
+  });
+
+  it("keeps this Monday during the weekly 9am send window", () => {
+    expect(localDateKey(nextWeeklyReminderWeekStart(new Date("2026-06-01T09:30:00+08:00")))).toBe("2026-06-01");
+  });
+});
+
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
 
 describe("project reminder message", () => {
   it("uses current round dates for next round start reminder", () => {

@@ -115,6 +115,7 @@ model ProjectScheduleItem {
 
 model Reminder {
   id             String         @id @default(cuid())
+  dedupeKey      String?        @unique
   projectId      String?
   project        Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   roundIndex     Int?
