@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { Division, ProjectLevel, ProjectStatus, RequestType } from "./enums";
 import { prisma } from "./prisma";
 import { decodeIds, encodeIds, localDate } from "./format";
-import { enrichProjectForSave, generateProjectSchedule } from "./schedule";
+import { enrichProjectForSave, generateProjectSchedule, isDelayed } from "./schedule";
 import { createAndSendProjectCreatedReminder, rebuildReminderPlan } from "./reminders";
 
 const continuingStatuses = new Set<ProjectStatus>([
@@ -51,7 +51,8 @@ export async function listProjects() {
     },
     orderBy: { createdAt: "desc" }
   });
-  return withScheduleStopFields(projects.map(serializeProject));
+  const serialized = await withScheduleStopFields(projects.map(serializeProject));
+  return serialized.map(applyEffectiveProjectStatus);
 }
 
 export async function getProject(id: string) {
@@ -66,7 +67,7 @@ export async function getProject(id: string) {
   });
   if (!project) return null;
   const [serialized] = await withScheduleStopFields([serializeProject(project)]);
-  return serialized;
+  return applyEffectiveProjectStatus(serialized);
 }
 
 export async function createProject(input: ProjectInput) {
@@ -419,6 +420,29 @@ async function withScheduleStopFields<T extends { id: string }>(projects: T[]) {
   });
 }
 
+function applyEffectiveProjectStatus<T extends {
+  status: string;
+  isUnscheduled?: boolean;
+  startDate?: Date | string | null;
+  targetDeliveryDate?: Date | string | null;
+  deliveryDate?: Date | string | null;
+}>(project: T): T {
+  if (project.isUnscheduled) return project;
+  const status = project.status as ProjectStatus;
+  if (isDelayed({
+    status,
+    startDate: toDateOrNull(project.startDate),
+    targetDeliveryDate: toDateOrNull(project.targetDeliveryDate),
+    deliveryDate: toDateOrNull(project.deliveryDate)
+  })) {
+    return { ...project, status: ProjectStatus.DELAYED };
+  }
+  return project;
+}
+
+function toDateOrNull(value: Date | string | null | undefined) {
+  return value ? localDate(value) : null;
+}
 async function getCompletedAt(id: string) {
   const rows = await prisma.$queryRawUnsafe<Array<{ completedAt: string | null }>>(
     `SELECT "completedAt" FROM "Project" WHERE "id" = ?`,

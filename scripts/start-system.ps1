@@ -1,21 +1,21 @@
-﻿$ErrorActionPreference = "Stop"
+﻿param(
+  [switch]$NoBrowser
+)
+
+$ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 $LogDir = Join-Path $Root ".logs"
-if (!(Test-Path $LogDir)) {
-  New-Item -ItemType Directory -Path $LogDir | Out-Null
-}
+if (!(Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
 
 $OutLog = Join-Path $LogDir "next-dev.out.log"
 $ErrLog = Join-Path $LogDir "next-dev.err.log"
 $NodePath = Join-Path $Root ".tools\node-v20.19.5-win-x64\node.exe"
 if (!(Test-Path $NodePath)) {
   $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
-  if (!$NodeCommand) {
-    throw "Node.js was not found. Install Node.js 20, or keep the bundled .tools runtime."
-  }
+  if (!$NodeCommand) { throw "Node.js was not found. Install Node.js 20, or keep the bundled .tools runtime." }
   $NodePath = $NodeCommand.Source
 }
 
@@ -42,12 +42,8 @@ for ($i = 0; $i -lt 45; $i++) {
   Start-Sleep -Seconds 1
   try {
     $response = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:3000/api/bootstrap" -TimeoutSec 3
-    if ($response.StatusCode -eq 200) {
-      $ready = $true
-      break
-    }
-  } catch {
-  }
+    if ($response.StatusCode -eq 200) { $ready = $true; break }
+  } catch {}
 }
 
 if (!$ready) {
@@ -58,4 +54,4 @@ if (!$ready) {
 }
 
 Write-Host "System is ready: http://127.0.0.1:3000"
-Start-Process "http://127.0.0.1:3000"
+if (!$NoBrowser) { Start-Process "http://127.0.0.1:3000" }
