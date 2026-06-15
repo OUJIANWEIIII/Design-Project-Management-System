@@ -143,7 +143,7 @@ const statements = [
   `CREATE TABLE "Settings" (
     "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'default',
     "wechatWebhookUrl" TEXT NOT NULL DEFAULT '',
-    "workdayRule" TEXT NOT NULL DEFAULT 'MONDAY_TO_FRIDAY',
+    "workdayRule" TEXT NOT NULL DEFAULT 'MONDAY_TO_SATURDAY',
     "reminderTimes" TEXT NOT NULL DEFAULT '项目创建后立即；对齐前一天；对齐当天上午；交付前一天；交付当天上午；每周一上午',
     "levelRules" TEXT NOT NULL DEFAULT '{"A":8,"B":8,"C":6,"D":2}',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

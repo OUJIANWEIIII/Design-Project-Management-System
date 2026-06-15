@@ -35,7 +35,9 @@ const stoppedStatuses = new Set<string>([
 
 export function isStoppedAfterDate(project: Pick<WeeklyProject, "status" | "completedAt" | "scheduleStoppedAt">, date: string) {
   const stopDate = project.scheduleStoppedAt || project.completedAt;
-  return stoppedStatuses.has(project.status) && !!stopDate && date > toISODate(stopDate);
+  if (!stoppedStatuses.has(project.status) || !stopDate) return false;
+  const stoppedDate = toISODate(stopDate);
+  return project.status === ProjectStatus.WAITING_ALIGNMENT ? date >= stoppedDate : date > stoppedDate;
 }
 
 export function getWeeklyProjectItemsForDate(project: WeeklyProject, date: string): WeeklyScheduleItem[] {
@@ -97,13 +99,14 @@ function getHistoricalRoundContinuationItems(project: WeeklyProject, date: strin
 }
 
 function getCurrentRoundContinuationItem(project: WeeklyProject, date: string): WeeklyScheduleItem | null {
-  if (project.status === ProjectStatus.WAITING_ALIGNMENT) return null;
   const continuingStatuses = new Set<string>([ProjectStatus.DELAYED]);
   if (!continuingStatuses.has(project.status) && !stoppedStatuses.has(project.status)) return null;
 
   const stopDate = project.scheduleStoppedAt || project.completedAt;
   const stoppedStatusDate = stopDate ? toISODate(stopDate) : "";
-  if (stoppedStatuses.has(project.status) && (!stopDate || date > stoppedStatusDate)) return null;
+  if (stoppedStatuses.has(project.status) && !stopDate) return null;
+  if (project.status === ProjectStatus.WAITING_ALIGNMENT && date >= stoppedStatusDate) return null;
+  if (project.status !== ProjectStatus.WAITING_ALIGNMENT && stoppedStatuses.has(project.status) && date > stoppedStatusDate) return null;
 
   const roundIndex = project.currentRoundIndex || 1;
   const currentRoundItems = project.scheduleItems

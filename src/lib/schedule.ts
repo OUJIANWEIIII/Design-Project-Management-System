@@ -60,7 +60,7 @@ export function addDays(date: Date, amount: number): Date {
 
 export function isWorkday(date: Date): boolean {
   const day = date.getDay();
-  return day !== 0 && day !== 6;
+  return day !== 0;
 }
 
 export function addWorkdays(startDate: Date | string, workdayCount: number): Date {
@@ -95,7 +95,7 @@ export function startOfWeek(date: Date | string): Date {
 
 export function weekDates(weekStart: Date | string): Date[] {
   const start = typeof weekStart === "string" ? localDate(weekStart) : localDate(weekStart);
-  return [0, 1, 2, 3, 4].map((offset) => addDays(start, offset));
+  return [0, 1, 2, 3, 4, 5].map((offset) => addDays(start, offset));
 }
 
 function getPlannedWorkdays(project: Pick<SchedulableProject, "level" | "startDate" | "targetDeliveryDate">): number {

@@ -153,7 +153,7 @@ model ReminderSendLock {
 model Settings {
   id               String   @id @default("default")
   wechatWebhookUrl String   @default("")
-  workdayRule      String   @default("MONDAY_TO_FRIDAY")
+  workdayRule      String   @default("MONDAY_TO_SATURDAY")
   reminderTimes    String   @default("项目创建后立即；对齐前一天；对齐当天上午；交付前一天；交付当天上午；每周一上午")
   levelRules       String   @default("{\"A\":8,\"B\":8,\"C\":6,\"D\":2}")
   createdAt        DateTime @default(now())

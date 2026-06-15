@@ -258,6 +258,7 @@ function isWechatWebhookUrl(url: string) {
 }
 
 function buildProjectReminderRows(project: Awaited<ReturnType<typeof prisma.project.findMany>>[number], namesById: Map<string, string>) {
+  if (project.status === ProjectStatus.WAITING_ALIGNMENT) return [];
   if (!isCurrentRoundReminderEnabled(project)) return [];
   const roundIndex = project.currentRoundIndex || 1;
   const rows: Array<{ projectId: string; roundIndex: number; type: ReminderType; scheduledAt: Date; messageContent: string }> = [
@@ -398,7 +399,7 @@ async function buildWeeklyMessage(weekStart: Date) {
   const dates = weekDates(weekStart);
   const designers = await prisma.designer.findMany({ where: { isDesigner: true, isActive: true } });
   const scheduleRows = await prisma.projectScheduleItem.findMany({
-    where: { date: { gte: dates[0], lte: dates[4] } },
+    where: { date: { gte: dates[0], lte: dates[dates.length - 1] } },
     include: { project: true },
     orderBy: [{ date: "asc" }, { roundIndex: "asc" }, { workdayIndex: "asc" }]
   });
@@ -436,7 +437,7 @@ async function buildWeeklyMessage(weekStart: Date) {
     }),
     ...buildDelayedWeeklyItems(await withScheduleStopFields(delayedProjects), dates)
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || (a.roundIndex || 1) - (b.roundIndex || 1) || a.workdayIndex - b.workdayIndex);
-  const lines = ["【本周设计排期】", `${formatDate(dates[0], "md")} - ${formatDate(dates[4], "md")}`, ""];
+  const lines = ["【本周设计排期】", `${formatDate(dates[0], "md")} - ${formatDate(dates[dates.length - 1], "md")}`, ""];
   let hasDesignerSchedule = false;
   for (const designer of designers) {
     const designerLines: string[] = [];

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { ProjectLevel, ProjectStatus } from "./enums";
-import { addWorkdays, calculateAlignmentDate, countWorkdaysBetween, generateProjectSchedule, isDelayed } from "./schedule";
+import { addWorkdays, calculateAlignmentDate, countWorkdaysBetween, generateProjectSchedule, isDelayed, weekDates } from "./schedule";
 import { toISODate } from "./format";
 
 describe("industrial design schedule rules", () => {
-  it("skips weekends when adding workdays", () => {
-    expect(toISODate(addWorkdays("2026-06-01", 8))).toBe("2026-06-10");
+  it("uses Monday to Saturday as workdays and skips Sunday", () => {
+    expect(toISODate(addWorkdays("2026-06-01", 8))).toBe("2026-06-09");
     expect(toISODate(addWorkdays("2026-06-04", 2))).toBe("2026-06-05");
+    expect(toISODate(addWorkdays("2026-06-06", 2))).toBe("2026-06-08");
+    expect(weekDates("2026-06-01").map(toISODate)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06"]);
   });
 
   it("creates day 3 alignment for A/B/C projects", () => {

@@ -112,7 +112,7 @@ SQLite 数据库
 ```text
 用户进入周总览
   → 前端已有 bootstrap 数据
-  → weekDates() 生成周一至周五
+  → weekDates() 生成周一至周六
   → getWeeklyProjectItemsForDate()
   → 按设计师过滤项目日期项
   → 计算日负载和周负载

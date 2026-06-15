@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { Division, ProjectLevel, ProjectStatus, RequestType } from "./enums";
+import { Division, ProjectLevel, ProjectStatus, ReminderStatus, RequestType } from "./enums";
 import { prisma } from "./prisma";
 import { decodeIds, encodeIds, localDate } from "./format";
 import { enrichProjectForSave, generateProjectSchedule, isDelayed } from "./schedule";
@@ -136,6 +136,9 @@ export async function updateProjectStatus(id: string, status: ProjectStatus) {
     now.toISOString(),
     id
   );
+  if (enriched.status === ProjectStatus.WAITING_ALIGNMENT) {
+    await prisma.reminder.deleteMany({ where: { projectId: id, status: ReminderStatus.PENDING } });
+  }
   return getProject(id);
 }
 

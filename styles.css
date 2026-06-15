@@ -636,6 +636,21 @@ tr:hover td {
   color: var(--status-gray-text);
 }
 
+.status-picker {
+  min-height: 28px;
+  max-width: 118px;
+  padding: 0 28px 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  outline: none;
+}
+
+.status-picker:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-soft);
+}
+
 .dot-risk {
   display: inline-block;
   width: 8px;
@@ -890,7 +905,7 @@ form {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.68);
-  padding: 10px;
+  padding: 9px 10px 10px;
 }
 
 .round-card.active {
@@ -909,17 +924,49 @@ form {
 
 .round-meta {
   justify-content: flex-start;
-  margin: 8px 0;
+  margin: 6px 0 8px;
 }
 
 .compact-timeline {
-  gap: 6px;
+  gap: 4px;
+  padding-top: 6px;
 }
 
 .compact-timeline .timeline-node {
-  min-height: 56px;
-  padding: 8px;
-  border-radius: 10px;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 42px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.compact-timeline .timeline-node > div:nth-child(2) {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) 128px;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.compact-timeline .timeline-node strong {
+  font-size: 14px;
+}
+
+.compact-timeline .timeline-node span {
+  margin-top: 0;
+  white-space: nowrap;
+}
+
+.compact-timeline .timeline-node.align {
+  background: #eef3ff;
+}
+
+.compact-timeline .timeline-node.delivery {
+  background: #f5fffa;
+}
+
+.compact-timeline .node-tags em {
+  padding: 2px 7px;
+  font-size: 10px;
 }
 
 .next-round-panel {
@@ -990,8 +1037,8 @@ form {
 
 .week-grid {
   display: grid;
-  grid-template-columns: 150px repeat(5, minmax(170px, 1fr)) 150px;
-  min-width: 1150px;
+  grid-template-columns: 150px repeat(6, minmax(160px, 1fr)) 150px;
+  min-width: 1260px;
 }
 
 .week-head {
