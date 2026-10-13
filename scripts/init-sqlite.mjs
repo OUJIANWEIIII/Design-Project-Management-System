@@ -6,6 +6,7 @@ const statements = [
   `PRAGMA foreign_keys = OFF`,
   `DROP TABLE IF EXISTS "ReminderSendLock"`,
   `DROP TABLE IF EXISTS "Reminder"`,
+  `DROP TABLE IF EXISTS "ProjectProposal"`,
   `DROP TABLE IF EXISTS "ProjectScheduleItem"`,
   `DROP TABLE IF EXISTS "FeedbackEvent"`,
   `DROP TABLE IF EXISTS "ProjectRound"`,
@@ -86,6 +87,21 @@ const statements = [
     CONSTRAINT "FeedbackEvent_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
   `CREATE INDEX "FeedbackEvent_projectId_idx" ON "FeedbackEvent"("projectId")`,
+  `CREATE TABLE "ProjectProposal" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "projectId" TEXT NOT NULL,
+    "roundIndex" INTEGER NOT NULL,
+    "designerId" TEXT NOT NULL,
+    "proposalName" TEXT NOT NULL,
+    "isSelected" BOOLEAN NOT NULL DEFAULT false,
+    "notes" TEXT NOT NULL DEFAULT '',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL,
+    CONSTRAINT "ProjectProposal_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "Project" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "ProjectProposal_designerId_fkey" FOREIGN KEY ("designerId") REFERENCES "Designer" ("id") ON DELETE CASCADE ON UPDATE CASCADE
+  )`,
+  `CREATE INDEX "ProjectProposal_projectId_roundIndex_idx" ON "ProjectProposal"("projectId", "roundIndex")`,
+  `CREATE INDEX "ProjectProposal_designerId_idx" ON "ProjectProposal"("designerId")`,
   `CREATE TABLE "ProjectScheduleItem" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "projectId" TEXT NOT NULL,

@@ -22,7 +22,9 @@ try {
 
 try {
   Write-RepairLog "starting repair"
-  & powershell.exe -ExecutionPolicy Bypass -NoProfile -File (Join-Path $PSScriptRoot "start-system.ps1") -NoBrowser
+  $StartScript = Join-Path $PSScriptRoot "start-system.ps1"
+  $StartLog = Join-Path $LogDir "auto-repair-start-system.log"
+  & $StartScript -NoBrowser *>> $StartLog
   Write-RepairLog "repair finished"
 } catch {
   Write-RepairLog "repair failed: $($_.Exception.Message)"

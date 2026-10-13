@@ -41,12 +41,29 @@ export type ProjectRoundInput = {
   notes?: string;
 };
 
+export type ProjectProposalInput = {
+  roundIndex: number;
+  designerId: string;
+  proposalName: string;
+  isSelected?: boolean;
+  notes?: string;
+};
+
+export type ProjectPatentInput = {
+  status: string;
+  applicationNo?: string;
+  applicationDate?: string | null;
+  notes?: string;
+};
+
 export async function listProjects() {
   const projects = await prisma.project.findMany({
     include: {
       scheduleItems: { orderBy: [{ roundIndex: "asc" }, { workdayIndex: "asc" }] },
       rounds: { orderBy: { roundIndex: "asc" } },
       feedbackEvents: { orderBy: { submittedAt: "asc" } },
+      proposals: { orderBy: [{ roundIndex: "desc" }, { createdAt: "desc" }] },
+      patent: true,
       reminders: { orderBy: { scheduledAt: "asc" } }
     },
     orderBy: { createdAt: "desc" }
@@ -62,6 +79,8 @@ export async function getProject(id: string) {
       scheduleItems: { orderBy: [{ roundIndex: "asc" }, { workdayIndex: "asc" }] },
       rounds: { orderBy: { roundIndex: "asc" } },
       feedbackEvents: { orderBy: { submittedAt: "asc" } },
+      proposals: { orderBy: [{ roundIndex: "desc" }, { createdAt: "desc" }] },
+      patent: true,
       reminders: { orderBy: { scheduledAt: "asc" } }
     }
   });
@@ -119,6 +138,77 @@ export async function updateProject(id: string, input: ProjectInput) {
 
 export async function deleteProject(id: string) {
   await prisma.project.delete({ where: { id } });
+}
+
+export async function updateProjectNotes(id: string, notes: string) {
+  await prisma.project.update({
+    where: { id },
+    data: {
+      notes,
+      updatedAt: new Date()
+    }
+  });
+  return getProject(id);
+}
+
+export async function createProjectProposal(projectId: string, input: ProjectProposalInput) {
+  const proposalName = input.proposalName.trim();
+  if (!proposalName) return getProject(projectId);
+  await prisma.projectProposal.create({
+    data: {
+      projectId,
+      roundIndex: input.roundIndex,
+      designerId: input.designerId,
+      proposalName,
+      isSelected: input.isSelected ?? false,
+      notes: input.notes?.trim() || "",
+      updatedAt: new Date()
+    }
+  });
+  return getProject(projectId);
+}
+
+export async function updateProjectProposal(projectId: string, proposalId: string, input: Partial<ProjectProposalInput>) {
+  const data: Prisma.ProjectProposalUpdateInput = {
+    updatedAt: new Date()
+  };
+  if (typeof input.proposalName === "string") data.proposalName = input.proposalName.trim();
+  if (typeof input.isSelected === "boolean") data.isSelected = input.isSelected;
+  if (typeof input.notes === "string") data.notes = input.notes.trim();
+  if (typeof input.roundIndex === "number") data.roundIndex = input.roundIndex;
+  if (typeof input.designerId === "string") data.designer = { connect: { id: input.designerId } };
+  await prisma.projectProposal.updateMany({
+    where: { id: proposalId, projectId },
+    data
+  });
+  return getProject(projectId);
+}
+
+export async function deleteProjectProposal(projectId: string, proposalId: string) {
+  await prisma.projectProposal.deleteMany({ where: { id: proposalId, projectId } });
+  return getProject(projectId);
+}
+
+export async function updateProjectPatent(projectId: string, input: ProjectPatentInput) {
+  const status = ["UNKNOWN", "NOT_APPLIED", "APPLIED"].includes(input.status) ? input.status : "UNKNOWN";
+  await prisma.projectPatent.upsert({
+    where: { projectId },
+    update: {
+      status,
+      applicationNo: input.applicationNo?.trim() || "",
+      applicationDate: input.applicationDate ? localDate(input.applicationDate) : null,
+      notes: input.notes?.trim() || "",
+      updatedAt: new Date()
+    },
+    create: {
+      projectId,
+      status,
+      applicationNo: input.applicationNo?.trim() || "",
+      applicationDate: input.applicationDate ? localDate(input.applicationDate) : null,
+      notes: input.notes?.trim() || ""
+    }
+  });
+  return getProject(projectId);
 }
 
 export async function updateProjectStatus(id: string, status: ProjectStatus) {
@@ -396,12 +486,16 @@ export function serializeProject<T extends {
   designerIds: string;
   scheduleItems?: { designerIds: string }[];
   rounds?: { designerIds: string }[];
+  proposals?: unknown[];
+  patent?: unknown;
 }>(project: T) {
   return {
     ...project,
     designerIds: decodeIds(project.designerIds),
     scheduleItems: project.scheduleItems?.map((item) => ({ ...item, designerIds: decodeIds(item.designerIds) })) ?? [],
-    rounds: project.rounds?.map((round) => ({ ...round, designerIds: decodeIds(round.designerIds) })) ?? []
+    rounds: project.rounds?.map((round) => ({ ...round, designerIds: decodeIds(round.designerIds) })) ?? [],
+    proposals: project.proposals ?? [],
+    patent: project.patent ?? null
   };
 }
 

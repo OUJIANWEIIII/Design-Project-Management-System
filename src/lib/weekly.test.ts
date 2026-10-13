@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getWeeklyProjectItemsForDate, weeklyStageLabel, type WeeklyProject } from "./weekly";
 import { ProjectStatus } from "./enums";
 
@@ -64,6 +64,35 @@ describe("weekly overview date facts", () => {
     expect(weeklyStageLabel(project, deliveryDay[0])).toBe("设计交付");
     expect(delayedDay).toHaveLength(1);
     expect(weeklyStageLabel(project, delayedDay[0])).toBe("延期");
+  });
+
+  it("continues in-progress projects after delivery once today is past delivery", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-19T09:00:00+08:00"));
+    try {
+      const project: WeeklyProject = {
+        ...baseProject,
+        status: ProjectStatus.IN_PROGRESS,
+        scheduleItems: [
+          {
+            ...baseProject.scheduleItems[0],
+            id: "p1-d5",
+            date: "2026-06-18",
+            workdayIndex: 5,
+            isDeliveryNode: true
+          }
+        ]
+      };
+
+      const deliveryDay = getWeeklyProjectItemsForDate(project, "2026-06-18");
+      const delayedDay = getWeeklyProjectItemsForDate(project, "2026-06-19");
+
+      expect(deliveryDay).toHaveLength(1);
+      expect(delayedDay).toHaveLength(1);
+      expect(delayedDay[0].id).toContain("continuation");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not schedule unscheduled projects", () => {

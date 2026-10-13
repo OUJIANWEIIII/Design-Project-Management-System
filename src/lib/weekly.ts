@@ -100,7 +100,6 @@ function getHistoricalRoundContinuationItems(project: WeeklyProject, date: strin
 
 function getCurrentRoundContinuationItem(project: WeeklyProject, date: string): WeeklyScheduleItem | null {
   const continuingStatuses = new Set<string>([ProjectStatus.DELAYED]);
-  if (!continuingStatuses.has(project.status) && !stoppedStatuses.has(project.status)) return null;
 
   const stopDate = project.scheduleStoppedAt || project.completedAt;
   const stoppedStatusDate = stopDate ? toISODate(stopDate) : "";
@@ -114,6 +113,8 @@ function getCurrentRoundContinuationItem(project: WeeklyProject, date: string): 
     .sort((a, b) => toISODate(a.date).localeCompare(toISODate(b.date)) || a.workdayIndex - b.workdayIndex);
   const lastItem = currentRoundItems[currentRoundItems.length - 1];
   if (!lastItem || date <= toISODate(lastItem.date)) return null;
+  const isPastCurrentRoundDelivery = toISODate(new Date()) > toISODate(lastItem.date);
+  if (!continuingStatuses.has(project.status) && !isPastCurrentRoundDelivery && !stoppedStatuses.has(project.status)) return null;
 
   const extraWorkdays = countWorkdaysBetween(addDays(new Date(`${toISODate(lastItem.date)}T00:00:00`), 1), date);
   if (extraWorkdays <= 0) return null;

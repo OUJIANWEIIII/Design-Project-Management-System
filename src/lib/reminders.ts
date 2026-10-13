@@ -409,6 +409,7 @@ async function buildWeeklyMessage(weekStart: Date) {
       status: {
         in: [
           ProjectStatus.DELAYED,
+          ProjectStatus.IN_PROGRESS,
           ProjectStatus.WAITING_FEEDBACK,
           ProjectStatus.COMPLETED,
           ProjectStatus.PAUSED
@@ -515,7 +516,6 @@ function buildDelayedWeeklyItems(projects: WeeklyProjectWithSchedule[], dates: D
   const continuingStatuses = new Set<string>([ProjectStatus.DELAYED]);
   const stoppedStatuses = new Set<string>([ProjectStatus.WAITING_FEEDBACK, ProjectStatus.COMPLETED, ProjectStatus.PAUSED]);
   return projects.flatMap((project) => {
-    if (!continuingStatuses.has(project.status) && !stoppedStatuses.has(project.status)) return [];
     const stopDate = project.scheduleStoppedAt || project.completedAt;
     const stoppedStatusDate = stopDate ? toISODate(stopDate) : "";
     const roundIndex = project.currentRoundIndex || 1;
@@ -524,6 +524,8 @@ function buildDelayedWeeklyItems(projects: WeeklyProjectWithSchedule[], dates: D
       .sort((a, b) => a.date.getTime() - b.date.getTime() || a.workdayIndex - b.workdayIndex);
     const lastItem = roundItems[roundItems.length - 1];
     if (!lastItem) return [];
+    const isPastCurrentRoundDelivery = toISODate(new Date()) > toISODate(lastItem.date);
+    if (!continuingStatuses.has(project.status) && !isPastCurrentRoundDelivery && !stoppedStatuses.has(project.status)) return [];
     return dates.flatMap((date) => {
       if (stoppedStatuses.has(project.status) && (!stopDate || toISODate(date) > stoppedStatusDate)) return [];
       if (!isWorkday(date) || toISODate(date) <= toISODate(lastItem.date)) return [];

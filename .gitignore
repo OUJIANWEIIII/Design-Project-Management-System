@@ -9,6 +9,7 @@ out/
 dist/
 build/
 coverage/
+output/
 
 # environment
 .env
@@ -19,9 +20,11 @@ coverage/
 
 # database
 *.db
+*.db.bad-*
 *.db-journal
 *.sqlite
 *.sqlite3
+tsconfig.tsbuildinfo
 
 # logs
 *.log
@@ -39,6 +42,7 @@ Thumbs.db
 # Python / misc caches
 __pycache__/
 *.pyc
+*.bak-*
 
 # local bundled runtime / downloaded archives
 .tools/

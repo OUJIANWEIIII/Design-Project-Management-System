@@ -31,6 +31,8 @@ model Project {
   scheduleItems      ProjectScheduleItem[]
   rounds             ProjectRound[]
   feedbackEvents     FeedbackEvent[]
+  proposals          ProjectProposal[]
+  patent             ProjectPatent?
   reminders          Reminder[]
   createdAt          DateTime              @default(now())
   updatedAt          DateTime              @updatedAt
@@ -88,8 +90,40 @@ model Designer {
   isDesigner    Boolean   @default(true)
   isActive      Boolean   @default(true)
   ownedProjects Project[] @relation("ProjectOwner")
+  proposals     ProjectProposal[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+model ProjectProposal {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roundIndex   Int
+  designerId   String
+  designer     Designer @relation(fields: [designerId], references: [id], onDelete: Cascade)
+  proposalName String
+  isSelected   Boolean  @default(false)
+  notes        String   @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([projectId, roundIndex])
+  @@index([designerId])
+}
+
+model ProjectPatent {
+  id              String   @id @default(cuid())
+  projectId       String   @unique
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status          String   @default("UNKNOWN")
+  applicationNo   String   @default("")
+  applicationDate DateTime?
+  notes           String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
 }
 
 model ProjectScheduleItem {
